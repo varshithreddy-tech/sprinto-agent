@@ -166,7 +166,7 @@ How the components map onto the deployment:
 
 | Component | Where it runs |
 |---|---|
-| Growth Lead UI | **Vercel**: FastAPI web app (`web/app.py`, entry `api/index.py`): Run, Companies + full decision logs, Threads with the simulated-reply box, Calendar, Activity log |
+| Growth Lead UI | **Vercel**: FastAPI web app (`sprinto_web/app.py`, entry `api/index.py`): Run, Companies + full decision logs, Threads with the simulated-reply box, Calendar, Activity log |
 | Reply agent + demo calendar | **Vercel functions**: LangGraph with a **PostgresSaver** checkpointer; Gemini classifies and drafts; Resend sends to DEMO_EMAIL |
 | Database | **Neon Postgres** (`sprinto-agent`, Singapore): every table, the job queue and the LangGraph checkpoints |
 | Research pipeline (scrape → qualify → Hunter → pains → email QA → send) | **Research worker**: `python run.py --worker` on a machine that can run headless Chromium for minutes per domain. It claims domains queued from the Vercel Run page and writes results back to Neon. This step can't run on Vercel (function time limit, Chromium size). |
@@ -185,6 +185,6 @@ How the components map onto the deployment:
 3. Queue domains on **Run**. Progress appears live, and the Run page shows whether the worker is online.
 4. Open **Threads** and type simulated prospect replies. The reply agent runs on Vercel.
 
-Local options: the same web app runs with `uvicorn web.app:app --port 8600`. The Streamlit dashboard (`streamlit run app.py`) also still works; both use Neon when `DATABASE_URL` is set, otherwise `data/sprinto.db`.
+Local options: the same web app runs with `uvicorn sprinto_web.app:app --port 8600`. The Streamlit dashboard (`streamlit run app.py`) also still works; both use Neon when `DATABASE_URL` is set, otherwise `data/sprinto.db`.
 
 **Tests:** `python -m pytest -q` runs everything on SQLite. `python -m pytest -q --pg` runs the same suite against Postgres on the Neon `ci-tests` branch (`TEST_DATABASE_URL`), each test in a throwaway schema. `scripts/migrate_sqlite_to_pg.py` copies a local SQLite database, including thread states, into Neon.

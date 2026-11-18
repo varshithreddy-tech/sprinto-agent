@@ -1,4 +1,4 @@
-"""Web dashboard (FastAPI). Runs on Vercel (api/index.py) and locally: `uvicorn web.app:app --reload`.
+"""Web dashboard (FastAPI). Runs on Vercel (api/index.py) and locally: `uvicorn sprinto_web.app:app --reload`.
 
 Same data as the Streamlit dashboard, read from the shared database (Neon). The reply agent and calendar run here
 live; long research runs are queued for the worker (`python run.py --worker`).
