@@ -214,6 +214,7 @@ domains → scraper (robots, httpx → Playwright fallback, discovery, trafilatu
 9. **Splash/storefront pages:** the page `<title>` and meta description are always kept. If dropping short blocks would leave a page under 30 words, the short blocks are kept instead. Without this, bewakoof.com's homepage cleaned to nothing and showed up as a retrieval failure instead of a clear non-SaaS business.
 10. **Blocked competitor sites:** drata.com serves a bot challenge (never bypassed). When a homepage can't be retrieved *and* the domain is on the configured competitor list (`COMPETITOR_DOMAINS`, from the rubric's examples), it is routed to `DISQUALIFIED`, and the log states there was no web evidence. Any other blocked domain stays `RETRIEVAL_FAILED`, not poor fit.
 11. **Staging/dev subdomains** (`stage.`, `dev.`, `qa.` …) found in sitemaps are excluded from discovery.
+12. **Email is sent through Resend, not Gmail.** The case study says to send via Gmail. This build uses Resend so it doesn't need a stored Gmail password or a Google OAuth setup. The outcome the case asks for is unchanged: every email is hard-coded to your own address (`DEMO_EMAIL`, enforced in code, CC/BCC always empty), and it lands in your inbox. On Resend's free tier, emails come from `onboarding@resend.dev`.
 
 ## No-reply deadline automation
 
