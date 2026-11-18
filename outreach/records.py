@@ -83,10 +83,116 @@ def finalise_reconciled_send(op_row: dict, provider_id: str) -> None:
     dry = op_row["payload"].get("sender") == "dry-run"
     log["status"] = "DRY_RUN_SENT" if dry else "EMAIL_SENT"
     log.setdefault("send", {}).update(status=send_mod.SENT, provider_id=provider_id, reconciled=True)
+    if log.get("draft"):
+        log["draft"].update(state="sent", sent_at=db.now_iso())
     log.pop("escalation_reason", None)
     save_log(domain, log)
     open_thread(domain, company_name(log), person, op_row["payload"]["subject"], op_row["payload"]["text"],
                 op_row["op_id"], provider_id, dry)
+
+
+# ------------------------------------------------------------------------------------- human review of drafts
+DRAFT_READY = "DRAFT_READY"
+DRAFT_DISCARDED = "DRAFT_DISCARDED"
+REVIEWABLE = {DRAFT_READY, "EMAIL_QA_FAILED"}
+_TENTATIVE_BAD = ("following up", "circling back", "as promised", "follow up on my")
+
+
+def make_draft(final_version: dict, qa_passed: bool) -> dict:
+    """The AI's email, waiting for a person to review, edit and send."""
+    return {"subject": final_version["subject"], "body": final_version["body"],
+            "ai_subject": final_version["subject"], "ai_body": final_version["body"],
+            "version": final_version["version"], "qa_total": final_version["qa_total"], "qa_passed": qa_passed,
+            "created_at": db.now_iso(), "edited": False, "edited_at": None, "state": "pending_review"}
+
+
+def draft_checks(subject: str, body: str, first_name: str) -> list[dict]:
+    """Deterministic checks shown to the reviewer on the (possibly edited) draft. Advisory: the reviewer decides."""
+    import re
+    low_s, low_b = subject.strip().lower(), body.lower()
+    first_line = next((ln for ln in body.strip().splitlines() if ln.strip()), "")
+    words = len(re.findall(r"\b[\w'’-]+\b", body))
+    return [
+        {"check": "Addressed to the recipient by name", "ok": bool(first_name) and first_name.lower() in first_line.lower()},
+        {"check": "No false “Re:”/“Fwd:” subject", "ok": not low_s.startswith(("re:", "fw:", "fwd:"))},
+        {"check": "No fake “following up” language", "ok": not any(p in low_b for p in _TENTATIVE_BAD)},
+        {"check": "No guarantees or invented percentages", "ok": not re.search(r"\b(guarantee[ds]?|\d+\s?%)", low_b)},
+        {"check": f"Length {words} words (aim ~80–120)", "ok": 70 <= words <= 140},
+        {"check": "Subject and body filled in", "ok": bool(subject.strip()) and bool(body.strip())},
+    ]
+
+
+def _load_log(domain: str) -> dict:
+    rec = db.query_one("SELECT decision_log FROM companies WHERE domain=?", (domain,))
+    if not rec or not rec["decision_log"]:
+        raise KeyError(f"unknown company {domain}")
+    return json.loads(rec["decision_log"])
+
+
+def save_draft(domain: str, subject: str, body: str) -> dict:
+    log = _load_log(domain)
+    d = log.get("draft")
+    if not d or d.get("state") != "pending_review":
+        raise ValueError("no draft waiting for review")
+    d.update(subject=subject.strip(), body=body.strip().replace("\r\n", "\n"), edited_at=db.now_iso())
+    d["edited"] = d["subject"] != d["ai_subject"] or d["body"] != d["ai_body"]
+    save_log(domain, log)
+    db.log_activity_safe(domain, "DRAFT_EDITED", {"edited_vs_ai": d["edited"]})
+    return d
+
+
+def discard_draft(domain: str) -> None:
+    log = _load_log(domain)
+    d = log.get("draft")
+    if not d or d.get("state") != "pending_review":
+        raise ValueError("no draft waiting for review")
+    d.update(state="discarded", discarded_at=db.now_iso())
+    log["status"] = DRAFT_DISCARDED
+    log["top_reason"] = "Draft discarded by reviewer"
+    save_log(domain, log)
+    db.log_activity_safe(domain, "DRAFT_DISCARDED", None)
+
+
+def send_draft(domain: str, subject: str, body: str) -> dict:
+    """Send ONLY after a person approves (clicks Send). Same guards as before: DEMO_EMAIL only, CC/BCC empty,
+    one send per company (stable operation id), reconciliation on timeouts."""
+    log = _load_log(domain)
+    d = log.get("draft")
+    if not d or d.get("state") != "pending_review":
+        raise ValueError("no draft waiting for review (already sent or discarded?)")
+    if not subject.strip() or not body.strip():
+        raise ValueError("subject and body are required")
+    save_draft(domain, subject, body)
+    log = _load_log(domain)
+    d = log["draft"]
+    person = log["contact"]["selected"]
+    company = company_name(log)
+    dry_run = bool((log.get("mode") or {}).get("dry_run"))
+    sender = send_mod.get_sender(dry_run)
+    op = send_mod.op_id(domain, "initial-email", "approved", sender.name)
+    text = f"{send_mod.demo_banner(person['name'], person['title'], company)}\n\n{d['body']}"
+    try:
+        res = send_mod.send_once(op, "initial_email", domain, d["subject"], text, sender)
+    except send_mod.RecipientGuardError as e:
+        res = {"status": send_mod.FAILED, "error": str(e), "op_id": op}
+    log["send"] = {**res, "subject": d["subject"], "to": S.DEMO_EMAIL, "sender": sender.name,
+                   "intended_for": f"{person['name']} <research-only: {person.get('email_research_only')}>",
+                   "approved_by": "reviewer (web app)", "approved_at": db.now_iso(), "edited_by_reviewer": d["edited"]}
+    if res["status"] in (send_mod.SENT, send_mod.DUPLICATE):
+        d.update(state="sent", sent_at=db.now_iso())
+        log["status"] = "DRY_RUN_SENT" if dry_run else "EMAIL_SENT"
+        log.pop("escalation_reason", None)
+        save_log(domain, log)
+        open_thread(domain, company, person, d["subject"], text, op, res.get("provider_id"), dry_run)
+    else:
+        if res["status"] == send_mod.UNCERTAIN:
+            d.update(state="sent_uncertain")
+            log["status"] = send_mod.UNCERTAIN
+        log["escalation_reason"] = res.get("error")
+        save_log(domain, log)
+    db.log_activity_safe(domain, "EMAIL_APPROVED_" + res["status"],
+                         {"op_id": op, "provider_id": res.get("provider_id"), "dry_run": dry_run, "edited": d["edited"]})
+    return res
 
 
 def sender_for_name(name: str | None):

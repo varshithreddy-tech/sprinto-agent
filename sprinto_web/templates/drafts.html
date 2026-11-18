@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Drafts{% endblock %}
+{% block content %}
+<h1>Drafts waiting for review</h1>
+<p class="muted small">The agent never emails a prospect on its own. Each qualified company ends with a draft: open it, check the reasoning, edit if needed, then send.</p>
+{% if not rows %}
+  <div class="card">No drafts waiting. Queue domains on the <a href="/run">Run</a> page; qualified companies appear here when the worker finishes.</div>
+{% else %}
+<div class="scroll"><table>
+  <tr><th>Company</th><th>Intended for</th><th>Subject</th><th>QA</th><th>Edited</th><th>Updated</th><th></th></tr>
+  {% for r in rows %}
+  <tr><td>{{ r.domain }}</td><td>{{ r.name }}<div class="muted small">{{ r.title }}</div></td><td class="small">{{ r.subject }}</td>
+      <td><span class="pill {{ 'ok' if r.qa_passed else 'bad' }}">{{ r.qa_total }}/10 {{ 'pass' if r.qa_passed else 'failed QA' }}</span></td>
+      <td>{{ 'yes' if r.edited else '' }}</td><td class="small muted">{{ r.updated_at|ist('%d %b %H:%M') }}</td>
+      <td><a href="/company/{{ r.domain }}#draft">Review →</a></td></tr>
+  {% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

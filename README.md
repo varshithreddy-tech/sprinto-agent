@@ -1,6 +1,6 @@
 # Sprinto outbound agent (demo)
 
-Paste a list of domains and the agent works end to end: it researches each company's own website, qualifies it against the 100-point rubric, picks the right person from Hunter, writes two evidence-backed pain hypotheses, drafts and QAs a cold email, sends it (to your demo inbox only), then handles replies and books meetings on a demo calendar.
+Paste a list of domains and the agent works end to end: it researches each company's own website, qualifies it against the 100-point rubric, picks the right person from Hunter, writes two evidence-backed pain hypotheses, drafts and QAs a cold email, then **stops for a person to review it**. The reviewer edits the draft if needed and clicks Send (to your demo inbox only). After that the agent handles replies and books meetings on a demo calendar.
 
 **The principle: code decides, AI judges and writes, every claim cites a source.** Gemini extracts facts with verbatim quotes, proposes rubric levels, and writes text. Python code handles the rest:
 
@@ -215,6 +215,7 @@ domains → scraper (robots, httpx → Playwright fallback, discovery, trafilatu
 10. **Blocked competitor sites:** drata.com serves a bot challenge (never bypassed). When a homepage can't be retrieved *and* the domain is on the configured competitor list (`COMPETITOR_DOMAINS`, from the rubric's examples), it is routed to `DISQUALIFIED`, and the log states there was no web evidence. Any other blocked domain stays `RETRIEVAL_FAILED`, not poor fit.
 11. **Staging/dev subdomains** (`stage.`, `dev.`, `qa.` …) found in sitemaps are excluded from discovery.
 12. **Email is sent through Resend, not Gmail.** The case study says to send via Gmail. This build uses Resend so it doesn't need a stored Gmail password or a Google OAuth setup. The outcome the case asks for is unchanged: every email is hard-coded to your own address (`DEMO_EMAIL`, enforced in code, CC/BCC always empty), and it lands in your inbox. On Resend's free tier, emails come from `onboarding@resend.dev`.
+13. **A person approves every cold email before it is sent.** The case study asks for automatic sending. This build deliberately stops at a draft (`DRAFT_READY`). In the web app's **Drafts** page, a reviewer reads the reasoning, edits the subject and body if needed, and clicks **Send**, **Save** or **Discard**. Automated checks on the edited text (addressed by name, no false "Re:", no "following up", no guarantees, length) are advisory. Each company can only be sent once. The AI's original and the reviewer's edits are both kept in the decision log. If QA fails after two revisions, the best-scoring version is still offered as a draft, flagged as failing QA. Replies from the reply agent (proposed slots, booking confirmations, answers) are still sent automatically.
 
 ## No-reply deadline automation
 

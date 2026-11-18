@@ -42,6 +42,7 @@
   <span class="brand">Sprinto outbound agent <span class="pill">DEMO</span></span>
   <nav>
     <a href="/run" class="{{ 'on' if nav=='run' }}">Run</a>
+    <a href="/drafts" class="{{ 'on' if nav=='drafts' }}">Drafts{% if drafts_count %} <span class="pill">{{ drafts_count }}</span>{% endif %}</a>
     <a href="/" class="{{ 'on' if nav=='companies' }}">Companies</a>
     <a href="/threads" class="{{ 'on' if nav=='threads' }}">Threads</a>
     <a href="/calendar" class="{{ 'on' if nav=='calendar' }}">Calendar</a>
@@ -54,8 +55,11 @@
 </main>
 <script>
   // Disable submit buttons while a request runs (the reply agent can take ~30s).
-  document.querySelectorAll('form').forEach(f => f.addEventListener('submit', () => {
-    f.querySelectorAll('button[type=submit]').forEach(b => { b.disabled = true; b.dataset.label && (b.textContent = b.dataset.label); });
+  // Deferred so the clicked button's name/value (e.g. action=send) is still included in the submission.
+  document.querySelectorAll('form').forEach(f => f.addEventListener('submit', (ev) => {
+    const clicked = ev.submitter;
+    setTimeout(() => f.querySelectorAll('button[type=submit]').forEach(b => {
+      b.disabled = true; if (b === clicked && b.dataset.label) b.textContent = b.dataset.label; }), 0);
   }));
   // Background upkeep (log retry, send reconciliation, no-reply deadlines) — throttled server-side.
   fetch('/tasks/maintenance', {method: 'POST', headers: {'accept': 'application/json'}}).catch(() => {});

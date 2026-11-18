@@ -103,7 +103,25 @@ def page(request: Request, name: str, **ctx):
     ctx["rubric"] = S.RUBRIC_VERSION
     ctx["model"] = S.GEMINI_MODEL
     ctx["public"] = S.PUBLIC_ACCESS
+    try:
+        ctx["drafts_count"] = len(pending_drafts())
+    except Exception:
+        ctx["drafts_count"] = 0
     return templates.TemplateResponse(request, name, ctx)
+
+
+def pending_drafts() -> list[dict]:
+    out = []
+    for r in db.query("SELECT domain, status, decision_log, updated_at FROM companies WHERE status IN (?, ?) "
+                      "ORDER BY updated_at DESC", ("DRAFT_READY", "EMAIL_QA_FAILED")):
+        log = jl(r["decision_log"])
+        d = log.get("draft") or {}
+        if d.get("state") == "pending_review":
+            c = (log.get("contact") or {}).get("selected") or {}
+            out.append({"domain": r["domain"], "status": r["status"], "subject": d.get("subject"), "qa_total": d.get("qa_total"),
+                        "qa_passed": d.get("qa_passed"), "edited": d.get("edited"), "name": c.get("name"),
+                        "title": c.get("title"), "updated_at": r["updated_at"]})
+    return out
 
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
@@ -162,8 +180,43 @@ def company(request: Request, domain: str):
     if not rec:
         return HTMLResponse("Not found", status_code=404)
     log = jl(rec["decision_log"])
+    from outreach.records import draft_checks
+    d = log.get("draft") or {}
+    person = (log.get("contact") or {}).get("selected") or {}
+    checks = draft_checks(d.get("subject", ""), d.get("body", ""), person.get("first_name", "")) if d else []
     return page(request, "company.html", nav="companies", rec=rec, log=log, q=log.get("qualification") or {},
-                thresholds={"min_total": S.QUALIFY_MIN_TOTAL})
+                thresholds={"min_total": S.QUALIFY_MIN_TOTAL}, draft=d, person=person, checks=checks,
+                msg=request.query_params.get("msg", ""), err=request.query_params.get("err", ""))
+
+
+@app.get("/drafts", response_class=HTMLResponse)
+def drafts(request: Request):
+    return page(request, "drafts.html", rows=pending_drafts())
+
+
+@app.post("/company/{domain}/draft")
+def draft_action(domain: str, action: str = Form(...), subject: str = Form(""), body: str = Form("")):
+    from urllib.parse import quote
+    from outreach import records
+    back = f"/company/{domain}#draft"
+    try:
+        if action == "save":
+            records.save_draft(domain, subject, body)
+            return RedirectResponse(f"/company/{domain}?msg=Draft saved#draft", status_code=303)
+        if action == "discard":
+            records.discard_draft(domain)
+            return RedirectResponse(f"/company/{domain}?msg=Draft discarded#draft", status_code=303)
+        if action == "send":
+            if not rate_ok("sends", S.RATE_LIMIT_SENDS_PER_HOUR):
+                return RedirectResponse(f"/company/{domain}?err={quote('Rate limit reached for sends; try later')}#draft", status_code=303)
+            res = records.send_draft(domain, subject, body)
+            if res["status"] in ("SENT", "DUPLICATE_BLOCKED"):
+                return RedirectResponse(f"/threads/{domain}", status_code=303)
+            return RedirectResponse(f"/company/{domain}?err={quote('Send ' + res['status'] + ': ' + str(res.get('error') or ''))}#draft",
+                                    status_code=303)
+    except (ValueError, KeyError) as e:
+        return RedirectResponse(f"/company/{domain}?err={quote(str(e))}#draft", status_code=303)
+    return RedirectResponse(back, status_code=303)
 
 
 @app.get("/run", response_class=HTMLResponse)

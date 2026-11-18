@@ -5,6 +5,44 @@
 <h1>{{ rec.domain }} <span class="pill">{{ log.status }}</span></h1>
 <p class="muted small">Rubric {{ log.rubric_version }} · mode {{ log.mode }} · run {{ log.run_id }}</p>
 {% if log.top_reason %}<div class="card"><b>Top reason:</b> {{ log.top_reason }}</div>{% endif %}
+{% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+{% if err %}<div class="banner bad">{{ err }}</div>{% endif %}
+
+{% if draft %}
+<section id="draft" class="card" style="border:2px solid var(--accent)">
+  {% if draft.state == 'pending_review' %}
+  <h2 style="margin-top:0">Review draft before sending</h2>
+  <p class="small muted">Intended for <b>{{ person.name }}</b>, {{ person.title }}. On Send it goes to the demo inbox only (DEMO_EMAIL), with a one-line DEMO banner on top{% if log.mode and log.mode.dry_run %}; this run is a <b>dry run</b>, so Send records the email without delivering it{% endif %}.
+  AI draft: version {{ draft.version }}, QA <span class="{{ 'ok' if draft.qa_passed else 'bad' }}">{{ draft.qa_total }}/10 {{ 'passed' if draft.qa_passed else '— failed QA, fix before sending' }}</span>{% if draft.edited %} · <b>edited by reviewer</b>{% endif %}.</p>
+  <form method="post" action="/company/{{ rec.domain }}/draft">
+    <label class="small"><b>Subject</b></label>
+    <input type="text" name="subject" value="{{ draft.subject }}" required>
+    <label class="small" style="display:block;margin-top:10px"><b>Body</b></label>
+    <textarea name="body" rows="14" required style="font:13px/1.5 ui-monospace, Consolas, monospace">{{ draft.body }}</textarea>
+    <p class="small"><b>Checks on the current text:</b>
+      {% for c in checks %}<span class="{{ 'ok' if c.ok else 'warn' }}">{{ '✓' if c.ok else '⚠' }} {{ c.check }}</span>&nbsp;&nbsp;{% endfor %}
+      <span class="muted">(updated when you save)</span></p>
+    <p style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="submit" name="action" value="send" data-label="Sending…">Send email</button>
+      <button type="submit" name="action" value="save" class="secondary">Save draft</button>
+      <button type="submit" name="action" value="discard" class="secondary" formnovalidate onclick="return confirm('Discard this draft? The company will not be emailed.')">Discard</button>
+    </p>
+  </form>
+  {% if draft.edited %}
+  <details><summary class="small">Show the AI's original draft</summary>
+    <p class="small"><b>Subject:</b> {{ draft.ai_subject }}</p><div class="mail small">{{ draft.ai_body }}</div></details>
+  {% endif %}
+  {% elif draft.state == 'sent' %}
+  <h2 style="margin-top:0">Sent after review</h2>
+  <p class="small">Approved and sent {{ draft.sent_at|ist }}{% if draft.edited %}, <b>with reviewer edits</b>{% else %}, unchanged from the AI draft{% endif %}. <a href="/threads/{{ rec.domain }}">Open the thread →</a></p>
+  {% elif draft.state == 'discarded' %}
+  <h2 style="margin-top:0">Draft discarded</h2>
+  <p class="small muted">The reviewer discarded this draft on {{ draft.discarded_at|ist }}; nothing was sent.</p>
+  {% else %}
+  <h2 style="margin-top:0">Draft: {{ draft.state }}</h2>
+  {% endif %}
+</section>
+{% endif %}
 {% if log.escalation_reason %}<div class="banner bad">Escalation: {{ log.escalation_reason }}</div>{% endif %}
 
 {% if q.dimensions %}

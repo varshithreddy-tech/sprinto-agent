@@ -19,10 +19,11 @@ from research.loop import research_company
 from scraper import discover as D
 from scraper.fetch import Fetcher
 from storage import db
-from outreach.records import (company_name, finalise_reconciled_send, open_thread as _open_thread,  # noqa: F401
+from outreach.records import (DRAFT_READY, make_draft, company_name, finalise_reconciled_send, open_thread as _open_thread,  # noqa: F401
                                public_log as _public_log, reconcile_sends, save_evidence, save_log, sender_for_name)
 
 TERMINAL_SENT = {"EMAIL_SENT", "DRY_RUN_SENT"}
+DONE_STATUSES = TERMINAL_SENT | {"DRAFT_READY"}  # re-runs skip these unless --force
 
 
 def _extra_research_for_pains(domain: str, log: dict) -> dict | None:
@@ -65,9 +66,8 @@ def process_domain(domain: str, *, mock_hunter: bool = False, dry_run: bool = Fa
     integrations = integrations if integrations is not None else {}
     domain = domain.strip().lower().removeprefix("https://").removeprefix("http://").removeprefix("www.").strip("/")
     existing = db.query_one("SELECT status FROM companies WHERE domain=?", (domain,))
-    # Resume: skip domains already sent in the same mode (a dry-run send never blocks a live run).
-    already = "DRY_RUN_SENT" if dry_run else "EMAIL_SENT"
-    if existing and existing["status"] in ({already, "EMAIL_SENT"} if dry_run else {already}) and not force:
+    # Resume: skip domains already drafted or sent (re-running would spend credits and replace the draft).
+    if existing and existing["status"] in DONE_STATUSES and not force:
         progress(domain, f"already {existing['status']} — skipped (resume)")
         return db.query_one("SELECT * FROM companies WHERE domain=?", (domain,))
     p = lambda m: progress(domain, m)
@@ -149,38 +149,21 @@ def process_domain(domain: str, *, mock_hunter: bool = False, dry_run: bool = Fa
         db.execute("INSERT INTO emails (domain, version, subject, body, qa_json, qa_score, passed, created_at) VALUES (?,?,?,?,?,?,?,?)",
                    (domain, v["version"], v["subject"], v["body"], json.dumps({"scores": v["qa_scores"], "checks": v["qa_checks"]}),
                     v["qa_total"], int(v["passed"]), db.now_iso()))
-    if em["status"] != "EMAIL_QA_PASSED":
-        log["status"] = email_qa.EMAIL_QA_FAILED
-        log["top_reason"] = "Email failed QA after 2 revisions"
-        save_log(domain, log)
-        return log
-    final = em["versions"][em["final_version"] - 1]
-
-    # ---- Send ---------------------------------------------------------------------
-    try:
-        sender = send_mod.get_sender(dry_run)
-    except send_mod.SendAuthError as e:
-        log.update(status="SEND_SETUP_ERROR", escalation_reason=str(e))
-        save_log(domain, log)
-        return log
-    op = send_mod.op_id(domain, "initial-email", em["final_version"], sender.name)
-    banner = send_mod.demo_banner(person["name"], person["title"], company)
-    text = f"{banner}\n\n{final['body']}"
-    p("sending" + (" (dry run)" if dry_run else f" to {S.DEMO_EMAIL}"))
-    try:
-        res = send_mod.send_once(op, "initial_email", domain, final["subject"], text, sender)
-    except send_mod.RecipientGuardError as e:
-        res = {"status": send_mod.FAILED, "error": str(e), "op_id": op}
-    log["send"] = {**res, "subject": final["subject"], "to": S.DEMO_EMAIL, "sender": sender.name,
-                   "intended_for": f"{person['name']} <research-only: {person.get('email_research_only')}>"}
-    if res["status"] in (send_mod.SENT, send_mod.DUPLICATE):
-        log["status"] = "DRY_RUN_SENT" if dry_run else "EMAIL_SENT"
-        _open_thread(domain, company, person, final["subject"], text, op, res.get("provider_id"), dry_run)
+    # ---- Draft for human review (nothing is sent automatically) --------------------------
+    # The reviewer edits and sends it from the web app (outreach/records.send_draft).
+    if em["status"] == "EMAIL_QA_PASSED":
+        final = em["versions"][em["final_version"] - 1]
+        log["draft"] = make_draft(final, qa_passed=True)
+        log["status"] = DRAFT_READY
+        log["top_reason"] = f"Draft ready for review (QA {final['qa_total']}/10)"
     else:
-        log["status"] = res["status"]
-        log["escalation_reason"] = res.get("error")
-    log["top_reason"] = log.get("top_reason")
-    db.log_activity_safe(domain, "EMAIL_" + res["status"], {"op_id": op, "provider_id": res.get("provider_id"), "dry_run": dry_run})
+        # Keep the best-scoring version so the reviewer can fix it, clearly flagged as failing QA.
+        best = max(em["versions"], key=lambda v: v["qa_total"])
+        log["draft"] = make_draft(best, qa_passed=False)
+        log["status"] = email_qa.EMAIL_QA_FAILED
+        log["top_reason"] = f"Email failed QA after 2 revisions; best draft (QA {best['qa_total']}/10) kept for review"
+    p(f"draft ready for review: {log['status']}")
+    db.log_activity_safe(domain, "DRAFT_CREATED", {"qa_passed": log["draft"]["qa_passed"], "qa_total": log["draft"]["qa_total"]})
     save_log(domain, log)
     return log
 

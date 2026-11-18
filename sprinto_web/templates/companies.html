@@ -10,11 +10,11 @@
   {% for r in rows %}
   <tr>
     <td><a href="/company/{{ r.domain }}">{{ r.domain }}</a></td>
-    <td><span class="pill {{ 'ok' if r.status in ('EMAIL_SENT','DRY_RUN_SENT','QUALIFIED') else ('bad' if r.status in ('DISQUALIFIED','ERROR') else 'warn') }}">{{ r.status }}</span></td>
+    <td><span class="pill {{ 'ok' if r.status in ('EMAIL_SENT','DRY_RUN_SENT','QUALIFIED','DRAFT_READY') else ('bad' if r.status in ('DISQUALIFIED','ERROR') else 'warn') }}">{{ r.status }}</span></td>
     <td>{{ '%g'|format(r.total) if r.total is not none else '' }}</td>
     <td>{{ r.rounds or 0 }}</td><td>{{ r.pages_fetched or '' }}</td>
     <td>{{ r.contact_name or '' }}{% if r.contact_title %}<div class="muted small">{{ r.contact_title }}</div>{% endif %}</td>
-    <td>{{ r.email_status or '' }}</td>
+    <td>{% if r.status in ('DRAFT_READY','EMAIL_QA_FAILED') %}<a href="/company/{{ r.domain }}#draft">Review draft →</a>{% else %}{{ r.email_status or '' }}{% endif %}</td>
     <td class="small">{{ (r.top_reason or '')[:160] }}</td>
     <td class="small muted">{{ r.updated_at|ist('%d %b %H:%M') }}</td>
   </tr>
