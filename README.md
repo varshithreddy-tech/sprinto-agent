@@ -13,6 +13,7 @@ Paste a list of domains and the agent works end to end: it researches each compa
 ## Setup
 
 ```bash
+git clone https://github.com/varshithreddy-tech/sprinto-agent.git
 cd sprinto-agent
 uv venv --python 3.12 .venv          # or: python -m venv .venv
 .venv\Scripts\activate               # Windows (macOS/Linux: source .venv/bin/activate)
@@ -156,3 +157,20 @@ The check is idempotent (escalated threads are no longer waiting). It only touch
 3. **When the lookup isn't possible,** the agent relies on Resend's idempotency key, which dedupes the same request for 24 hours. A lookup *error* is treated as unknown, never as "not sent". The method used is stored in the operation's `detail`.
    - **Your current key is send-only** ("This API key is restricted to only send emails"), so it can't look emails up. Create a **Full access** key in Resend and put it in `RESEND_API_KEY` to enable lookups.
 4. **A sweep** runs on the dashboard watcher, `--check-deadlines` and `--watch`. It re-checks `SEND_UNCERTAIN` and stale `PENDING` operations, and marks the ones it finds as SENT. A reconciled first email also updates the company to `EMAIL_SENT` and opens its reply thread. The sweep **never re-sends**: anything not found stays uncertain for a human, and appears under "Sends needing reconciliation" on the Activity log page.
+
+## Hosting
+
+This project runs locally (`streamlit run app.py`). It is **not deployed to Vercel**, because:
+
+- the Streamlit dashboard needs a long-running server with websocket connections, and Vercel only runs short serverless functions;
+- researching one domain takes several minutes, beyond Vercel's function time limit;
+- headless Chromium is too large for a Vercel function;
+- SQLite storage and the background watcher need a persistent disk and process.
+
+Options if you need hosting later:
+
+- **Streamlit Community Cloud** can deploy straight from this repo. Its storage resets when the app restarts.
+- **A container host with a persistent disk** can run it as-is.
+- **Vercel would need a rebuild:** serverless API routes, a hosted Postgres, and the pipeline split into short steps.
+
+Secrets stay in `.env` (gitignored). Never commit them.
