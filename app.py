@@ -263,5 +263,14 @@ elif page == "Calendar":
 # ============================================================================ ACTIVITY LOG
 elif page == "Activity log":
     st.title("DEMO ACTIVITY LOG — not a real CRM")
+    from agent.graph import LAST_LOG_RETRY, pending_log_counts, retry_failed_logging
+    pend = pending_log_counts()
+    c1, c2 = st.columns([1, 3])
+    if c1.button("Retry failed log writes now"):
+        st.write(retry_failed_logging())
+        pend = pending_log_counts()
+    c2.caption(f"Waiting to be written: {pend['spooled']} spooled pipeline entries · threads with unlogged entries: "
+               f"{', '.join(pend['threads']) or 'none'} · auto-retry every {S.DEADLINE_CHECK_MINUTES:g} min · "
+               f"last retry: {LAST_LOG_RETRY['at'] or 'pending'}")
     rows = db.query("SELECT ts, domain, event, detail FROM activity_log ORDER BY id DESC LIMIT 500")
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)

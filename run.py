@@ -27,9 +27,13 @@ def main() -> int:
     if a.check_deadlines or a.watch is not None:
         import time
         from datetime import datetime
-        from agent.graph import check_deadlines
+        from agent.graph import check_deadlines, retry_failed_logging
         minutes = S.DEADLINE_CHECK_MINUTES if (a.watch is None or a.watch < 0) else a.watch
         while True:
+            lr = retry_failed_logging()
+            if lr["spool_written"] or lr["threads_retried"] or lr["still_pending"]:
+                print(f"activity-log retry: wrote {lr['spool_written']} spooled, retried threads {lr['threads_retried']}, "
+                      f"still pending {lr['still_pending']}", flush=True)
             res = check_deadlines()
             stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"[{stamp}] deadline check: {len(res)} thread(s) escalated", flush=True)

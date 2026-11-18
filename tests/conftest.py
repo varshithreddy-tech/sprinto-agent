@@ -15,6 +15,7 @@ def _never_touch_real_data(tmp_path, monkeypatch):
     import agent.graph as ag
     monkeypatch.setattr(S, "DB_PATH", tmp_path / "isolated.db")
     monkeypatch.setattr(S, "DECISION_LOG_DIR", tmp_path / "decision_logs")
+    monkeypatch.setattr(S, "ACTIVITY_SPOOL_PATH", tmp_path / "activity_spool.jsonl")
     db.set_db(None)
     ag.set_graph(None)
     yield

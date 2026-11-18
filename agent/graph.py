@@ -40,18 +40,25 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
     now = now or (lambda: datetime.now(timezone.utc))
     sender_factory = sender_factory or (lambda delivery: send_mod.get_sender(delivery == "dry-run"))
 
+    def entry(event, detail=None):
+        return db.new_entry(event, detail, ts=now().replace(microsecond=0).isoformat())
+
     def log_entry(state, event, detail=None):
-        return [*state.get("pending_log", []), {"event": event, "detail": detail}]
+        return [*state.get("pending_log", []), entry(event, detail)]
 
     # ------------------------------------------------------------------ nodes
     def ingest(state: st.ThreadState) -> dict:
         msg = state.get("incoming") or {}
-        base = {"outbox": [], "pending_log": [], "skip_reason": None, "classification": None, "window": None}
+        # Entries a previous run failed to write are KEPT (never wiped) until update_activity_log succeeds.
+        carried = list(state.get("pending_log") or [])
+        base = {"outbox": [], "pending_log": carried, "skip_reason": None, "classification": None, "window": None}
         if msg.get("type") == "init":
             return {**st.initial_state(msg["thread_id"], msg["deadline"], S.ORGANIZER_TZ, msg.get("agent_message_ids", []),
                                        msg.get("delivery", "resend")), **base, "incoming": msg,
                     "skip_reason": "thread initialised",
-                    "pending_log": [{"event": "THREAD_OPENED", "detail": {"reply_deadline": msg["deadline"]}}]}
+                    "pending_log": [entry("THREAD_OPENED", {"reply_deadline": msg["deadline"]})]}
+        if msg.get("type") == "log_retry":
+            return {**base, "skip_reason": "retrying failed activity-log writes" if carried else "nothing to retry"}
         if msg.get("type") == "deadline_tick":
             dl = state.get("reply_deadline")
             waiting = state.get("reply_status") in st.WAITING
@@ -72,7 +79,7 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
         if state.get("reply_status") in st.STOPPED:
             return {**base, "processed_message_ids": processed,
                     "skip_reason": f"thread paused ({state.get('reply_status')}); human handles further replies",
-                    "pending_log": [{"event": "MESSAGE_WHILE_PAUSED", "detail": {"message_id": mid}}]}
+                    "pending_log": carried + [entry("MESSAGE_WHILE_PAUSED", {"message_id": mid})]}
         return {**base, "processed_message_ids": processed, "escalation_reason": None}
 
     def classify_reply(state: st.ThreadState) -> dict:
@@ -156,7 +163,7 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
                     "reply_status": st.MEETING_BOOKED,
                     "rejected_slots": sorted(set(state.get("rejected_slots", [])) | set(other)),
                     "outbox": [*state.get("outbox", []), {"kind": "booking_confirmation", "body": body, "ics": sent_ics}],
-                    "pending_log": logs + [{"event": "MEETING_" + res["kind"], "detail": {"event_id": res["event_id"], "slot": line}}]}
+                    "pending_log": logs + [entry("MEETING_" + res["kind"], {"event_id": res["event_id"], "slot": line})]}
         if res["status"] == "UNCERTAIN":
             return {"meeting_status": "UNCERTAIN", "reply_status": st.BOOKING_UNCERTAIN, "pending_log": logs,
                     "escalation_reason": f"BOOKING_UNCERTAIN: {res.get('reason')}"}
@@ -178,7 +185,7 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
         if not state.get("event_id"):
             # Nothing booked yet: this is an ordinary counterproposal.
             upd = counterproposal(state)
-            upd["pending_log"] = upd["pending_log"] + [{"event": "RESCHEDULE_WITHOUT_BOOKING_TREATED_AS_COUNTERPROPOSAL"}]
+            upd["pending_log"] = upd["pending_log"] + [entry("RESCHEDULE_WITHOUT_BOOKING_TREATED_AS_COUNTERPROPOSAL")]
             return upd
         old = state.get("confirmed_slot")
         # A booked meeting starts a fresh negotiation: counterproposal rounds reset. The existing event is kept
@@ -246,7 +253,7 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
             db.execute("INSERT OR IGNORE INTO messages (message_id, thread_id, direction, author, subject, body, provider_id, created_at)"
                        " VALUES (?,?,?,?,?,?,?,?)", (mid, state["thread_id"], "outbound", "agent", subject,
                                                      text + ("\n\n[invite.ics attached]" if att else ""), res.get("provider_id"), db.now_iso()))
-            logs.append({"event": "REPLY_" + res["status"], "detail": {"kind": item["kind"], "op_id": op, "provider_id": res.get("provider_id")}})
+            logs.append(entry("REPLY_" + res["status"], {"kind": item["kind"], "op_id": op, "provider_id": res.get("provider_id")}))
             if res["status"] not in (send_mod.SENT, send_mod.DUPLICATE):
                 upd["escalation_reason"] = f"SEND_UNCERTAIN for {item['kind']}: {res.get('error')}"
                 upd["reply_status"] = st.ESCALATED
@@ -256,15 +263,20 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
         return upd
 
     def update_activity_log(state: st.ThreadState) -> dict:
+        try:  # mirror status for the dashboard; independent of the log write
+            db.execute("UPDATE threads SET status=? WHERE thread_id=?", (state.get("reply_status"), state["thread_id"]))
+        except Exception:
+            pass
         entries = state.get("pending_log", [])
         if not entries:
             return {}
         ok = T.update_activity_log(state["thread_id"], entries)
         rc = dict(state.get("retry_counts") or {})
         if not ok:
+            # Actions already taken (sends, bookings) stand. Only the log write is retried: the entries stay in
+            # the checkpoint (crm_logged=False) and retry_failed_logging() picks them up on the next sweep.
             rc["logging"] = rc.get("logging", 0) + 1
-            return {"crm_logged": False, "retry_counts": rc}  # keep pending entries for a later retry
-        db.execute("UPDATE threads SET status=? WHERE thread_id=?", (state.get("reply_status"), state["thread_id"]))
+            return {"crm_logged": False, "retry_counts": rc}
         return {"crm_logged": True, "pending_log": []}
 
     # ------------------------------------------------------------------ routing
@@ -421,19 +433,59 @@ def check_deadlines(graph=None, now: datetime | None = None) -> list[dict]:
             out.append({"thread": tid, "status": after.get("reply_status"), "reason": after.get("escalation_reason")})
         except Exception as e:  # keep going for other threads
             errors.append(f"{tid}: {type(e).__name__}: {e}")
-            db.log_activity(tid, "DEADLINE_CHECK_FAILED", str(e))
+            db.log_activity_safe(tid, "DEADLINE_CHECK_FAILED", str(e))
     LAST_DEADLINE_CHECK.update(at=now.isoformat(), escalated=out, error="; ".join(errors) or None)
     return out
 
 
+LAST_LOG_RETRY: dict = {"at": None, "spool_written": 0, "threads_retried": [], "still_pending": 0}
+
+
+def threads_with_unlogged_entries(graph=None) -> list[str]:
+    out = []
+    for t in db.query("SELECT thread_id FROM threads ORDER BY thread_id"):
+        s = get_state(t["thread_id"], graph)
+        if s and s.get("pending_log") and not s.get("crm_logged", True):
+            out.append(t["thread_id"])
+    return out
+
+
+def retry_failed_logging(graph=None) -> dict:
+    """Retry ONLY the logging that failed earlier: spooled pipeline entries + entries kept in thread checkpoints.
+    Never re-runs sends or bookings. Entry ids make it safe to run any number of times."""
+    spool = db.flush_spool()
+    retried, still = [], 0
+    for tid in threads_with_unlogged_entries(graph):
+        try:
+            after = (graph or get_graph()).invoke({"incoming": {"type": "log_retry"}}, _cfg(tid))
+            if after.get("crm_logged"):
+                retried.append(tid)
+            else:
+                still += len(after.get("pending_log") or [])
+        except Exception:
+            still += 1
+    res = {"at": datetime.now(timezone.utc).isoformat(), "spool_written": spool["written"],
+           "threads_retried": retried, "still_pending": still + spool["remaining"]}
+    LAST_LOG_RETRY.update(res)
+    return res
+
+
+def pending_log_counts(graph=None) -> dict:
+    return {"spooled": db.spool_count(), "threads": threads_with_unlogged_entries(graph)}
+
+
 def start_deadline_watcher(interval_minutes: float | None = None) -> threading.Thread:
-    """Background thread that runs check_deadlines every N minutes for as long as the process lives
-    (used by the dashboard and `run.py --watch`)."""
+    """Background thread that, every N minutes for as long as the process lives, retries failed activity-log
+    writes and escalates threads past their no-reply deadline (used by the dashboard and `run.py --watch`)."""
     interval = 60 * (interval_minutes if interval_minutes is not None else S.DEADLINE_CHECK_MINUTES)
     stop = threading.Event()
 
     def loop():
         while not stop.is_set():
+            try:
+                retry_failed_logging()
+            except Exception:
+                pass
             try:
                 check_deadlines()
             except Exception as e:  # never let the watcher die

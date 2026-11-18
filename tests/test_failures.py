@@ -189,7 +189,7 @@ def test_calendar_failure_escalates_never_proposes_unchecked(env, monkeypatch):
 
 def test_logging_failure_preserves_actions(env, monkeypatch):
     from agent import tools as T
-    monkeypatch.setattr(T.db, "log_activity", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("log db locked")))
+    monkeypatch.setattr(T.db, "log_entries", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("log db locked")))
     tid = env.open_thread()
     s = env.reply(tid, "interested")
     assert s["reply_status"] == st.TIMES_PROPOSED and len(env.sender.sent) == 1  # send preserved

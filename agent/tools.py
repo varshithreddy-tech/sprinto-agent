@@ -261,10 +261,10 @@ def book_meeting(state: dict, slot_iso: str, thread: dict, now: datetime) -> dic
 
 # --------------------------------------------------------------------------- logging
 def update_activity_log(domain: str, entries: list[dict], sleep=_time.sleep) -> bool:
+    """All-or-nothing write; entries carry stable ids, so a retry can never duplicate a row."""
     for attempt in range(1, S.MAX_FETCH_ATTEMPTS + 1):
         try:
-            for e in entries:
-                db.log_activity(domain, e["event"], e.get("detail"))
+            db.log_entries(domain, entries)
             return True
         except Exception:
             if attempt < S.MAX_FETCH_ATTEMPTS:

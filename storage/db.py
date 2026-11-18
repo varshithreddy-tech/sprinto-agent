@@ -6,7 +6,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
 import threading
+import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -59,6 +62,11 @@ MIGRATIONS: list[str] = [
         attendee TEXT, domain TEXT, status TEXT, op_id TEXT, created_at TEXT, updated_at TEXT);
     CREATE TABLE IF NOT EXISTS activity_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, domain TEXT, event TEXT, detail TEXT);
+    """,
+    # v2: every log entry carries a stable id so retries can never duplicate a row
+    """
+    ALTER TABLE activity_log ADD COLUMN entry_id TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_activity_entry ON activity_log(entry_id);
     """,
 ]
 
@@ -125,10 +133,90 @@ def record_version(kind: str, name: str, version: str, content: str = "") -> Non
     execute("INSERT OR IGNORE INTO versions VALUES (?,?,?,?,?)", (kind, name, version, content, now_iso()))
 
 
-def log_activity(domain: str, event: str, detail: Any = None) -> None:
-    """DEMO ACTIVITY LOG — not a real CRM."""
-    execute("INSERT INTO activity_log (ts, domain, event, detail) VALUES (?,?,?,?)",
-            (now_iso(), domain, event, json.dumps(detail, default=str) if detail is not None else None))
+def new_entry(event: str, detail: Any = None, ts: str | None = None) -> dict:
+    """A log entry stamped at creation: retries keep its original time and id."""
+    return {"event": event, "detail": detail, "ts": ts or now_iso(), "entry_id": uuid.uuid4().hex}
+
+
+def log_activity(domain: str, event: str, detail: Any = None, ts: str | None = None, entry_id: str | None = None) -> None:
+    """DEMO ACTIVITY LOG — not a real CRM. Raises on failure; callers that must not fail use log_activity_safe."""
+    log_entries(domain, [{"event": event, "detail": detail, "ts": ts or now_iso(), "entry_id": entry_id or uuid.uuid4().hex}])
+
+
+def log_entries(domain: str, entries: list[dict], conn: sqlite3.Connection | None = None) -> None:
+    """Write several entries in ONE transaction (all or nothing). Re-writing an entry_id is a no-op."""
+    c = conn or get_db()
+    rows = [(e.get("ts") or now_iso(), domain, e["event"],
+             json.dumps(e.get("detail"), default=str) if e.get("detail") is not None else None,
+             e.get("entry_id") or uuid.uuid4().hex) for e in entries]
+    with _LOCK:
+        try:
+            c.executemany("INSERT OR IGNORE INTO activity_log (ts, domain, event, detail, entry_id) VALUES (?,?,?,?,?)", rows)
+            c.commit()
+        except Exception:
+            c.rollback()
+            raise
+
+
+def _spool_path() -> Path:
+    return Path(settings.ACTIVITY_SPOOL_PATH)
+
+
+def log_activity_safe(domain: str, event: str, detail: Any = None) -> bool:
+    """Logging must never undo or block a successful action (rubric 3.11). Tries the DB up to 3 times;
+    if it still fails, the entry is appended to a local spool file that flush_spool() retries later."""
+    entry = new_entry(event, detail)
+    for attempt in range(1, settings.MAX_FETCH_ATTEMPTS + 1):
+        try:
+            log_entries(domain, [entry])
+            return True
+        except Exception:
+            if attempt < settings.MAX_FETCH_ATTEMPTS:
+                time.sleep(0.05 * attempt)
+    try:
+        sp = _spool_path()
+        sp.parent.mkdir(parents=True, exist_ok=True)
+        with _LOCK, open(sp, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"domain": domain, **entry}, default=str) + "\n")
+    except OSError as e:  # last resort: never raise from logging
+        print(f"[activity-log] could not log or spool {domain} {event}: {e}", file=sys.stderr)
+    return False
+
+
+def spool_count() -> int:
+    sp = _spool_path()
+    if not sp.exists():
+        return 0
+    with _LOCK:
+        return sum(1 for ln in sp.read_text(encoding="utf-8").splitlines() if ln.strip())
+
+
+def flush_spool() -> dict:
+    """Retry spooled entries. Written ones are removed; failures stay for the next sweep."""
+    sp = _spool_path()
+    if not sp.exists():
+        return {"written": 0, "remaining": 0}
+    with _LOCK:
+        lines = [ln for ln in sp.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        keep, written = [], 0
+        for ln in lines:
+            try:
+                e = json.loads(ln)
+            except json.JSONDecodeError:
+                keep.append(ln)  # never silently drop data
+                continue
+            try:
+                log_entries(e.pop("domain"), [e])
+                written += 1
+            except Exception:
+                keep.append(ln)
+        if keep:
+            tmp = sp.with_suffix(".tmp")
+            tmp.write_text("".join(k + "\n" for k in keep), encoding="utf-8")
+            tmp.replace(sp)
+        else:
+            sp.unlink(missing_ok=True)
+    return {"written": written, "remaining": len(keep)}
 
 
 def upsert_company(domain: str, **fields: Any) -> None:

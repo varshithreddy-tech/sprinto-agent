@@ -108,7 +108,7 @@ def process_domain(domain: str, *, mock_hunter: bool = False, dry_run: bool = Fa
     log["mode"] = {"mock_hunter": mock_hunter, "dry_run": dry_run}
     save_evidence(domain, log["facts"])
     save_log(domain, log)
-    db.log_activity(domain, "QUALIFICATION", {"status": log["status"], "total": (log.get("qualification") or {}).get("total")})
+    db.log_activity_safe(domain, "QUALIFICATION", {"status": log["status"], "total": (log.get("qualification") or {}).get("total")})
     if log["status"] != sc.QUALIFIED:
         return log
 
@@ -212,7 +212,7 @@ def process_domain(domain: str, *, mock_hunter: bool = False, dry_run: bool = Fa
         log["status"] = res["status"]
         log["escalation_reason"] = res.get("error")
     log["top_reason"] = log.get("top_reason")
-    db.log_activity(domain, "EMAIL_" + res["status"], {"op_id": op, "provider_id": res.get("provider_id"), "dry_run": dry_run})
+    db.log_activity_safe(domain, "EMAIL_" + res["status"], {"op_id": op, "provider_id": res.get("provider_id"), "dry_run": dry_run})
     save_log(domain, log)
     return log
 
@@ -226,7 +226,7 @@ def _open_thread(domain, company, person, subject, text, op, provider_id, dry_ru
         db.execute("DELETE FROM messages WHERE thread_id=?", (domain,))
         db.execute("DELETE FROM threads WHERE thread_id=?", (domain,))
         get_graph().checkpointer.delete_thread(domain)
-        db.log_activity(domain, "DRY_RUN_THREAD_REPLACED_BY_LIVE_SEND")
+        db.log_activity_safe(domain, "DRY_RUN_THREAD_REPLACED_BY_LIVE_SEND")
     if not db.query_one("SELECT 1 FROM threads WHERE thread_id=?", (domain,)):
         db.execute("INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?)",
                    (domain, domain, person["name"], person["title"], company, subject, db.now_iso(), deadline,
@@ -258,8 +258,11 @@ def run_batch(domains: list[str], *, mock_hunter=False, dry_run=False, progress=
             save_log(d, log)
             out.append(log)
         progress(d, f"done: {out[-1].get('status')}")
-    try:  # every batch run also sweeps existing threads for passed no-reply deadlines
-        from agent.graph import check_deadlines
+    try:  # every batch run also retries failed log writes and sweeps for passed no-reply deadlines
+        from agent.graph import check_deadlines, retry_failed_logging
+        lr = retry_failed_logging()
+        if lr["spool_written"] or lr["threads_retried"] or lr["still_pending"]:
+            progress("activity-log", f"retried failed log writes: {lr}")
         for r in check_deadlines():
             progress(r["thread"], f"no-reply deadline passed -> {r['status']}: {r['reason']}")
     except Exception as e:

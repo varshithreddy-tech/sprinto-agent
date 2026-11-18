@@ -15,6 +15,7 @@ PROMPTS_DIR = CONFIG_DIR / "prompts"
 DATA_DIR = ROOT / "data"
 DECISION_LOG_DIR = DATA_DIR / "decision_logs"
 DB_PATH = Path(os.getenv("SPRINTO_DB_PATH", DATA_DIR / "sprinto.db"))
+ACTIVITY_SPOOL_PATH = DATA_DIR / "activity_spool.jsonl"   # failed log writes wait here for retry
 FIXTURES_DIR = ROOT / "tests" / "fixtures"
 
 # ---- Keys / integrations -------------------------------------------------

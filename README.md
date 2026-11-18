@@ -139,3 +139,10 @@ A thread waiting on the prospect is escalated when its deadline passes. Waiting 
 - **`python run.py --watch`:** a headless loop, e.g. in a terminal you leave open.
 
 The check is idempotent (escalated threads are no longer waiting). It only touches threads that are actually due, and one thread's failure doesn't stop the others. To run it even when nothing is open, `scripts/schedule_deadline_check.ps1` registers an hourly Windows Task Scheduler job. It is **not** registered automatically; run it yourself, and remove it with `-Remove`.
+
+## Activity-log failures (rubric 3.11: "preserve successful actions; retry logging only")
+
+- **Every log entry gets a stable id and its original timestamp when it is created.** Writes happen in one transaction, so a batch is written fully or not at all. Re-writing an id is ignored, so a retry can never duplicate a row.
+- **Reply agent:** if the write fails, the send or booking still stands. The entries stay in the thread's LangGraph checkpoint (`crm_logged=False`) and are carried forward, never wiped, until they are written.
+- **Pipeline:** logging can never turn a successful send into an error. After 3 failed attempts, an entry goes to `data/activity_spool.jsonl` (gitignored with `data/`).
+- **Retry sweep:** `retry_failed_logging()` writes the spool plus any unlogged thread entries, and never re-runs sends or bookings. It runs in the same places as the deadline check: the dashboard watcher, the end of every batch, and `run.py --check-deadlines` / `--watch`. The **Activity log** page shows what is waiting and has a "Retry failed log writes now" button.
