@@ -152,16 +152,14 @@ Domains already sent are skipped on re-run (resume after a restart). Add `--forc
    - both pain hypotheses with scores;
    - every email version with QA scores and mandatory checks;
    - the send ID.
-3. **Threads** page: open a sent email. Under **DEMO — simulated prospect replies**, type a reply as the prospect, for example:
-   - "Interested, happy to chat" → the agent checks the calendar and proposes 3 slots;
-   - "Option 2 works" → the agent re-checks that slot, books it, and emails a confirmation with an `.ics` invite;
+3. **Drafts** page: every qualified company's cold email waits here. Open it, read the reasoning, edit the subject or body, then click **Send** (or **Save** / **Discard**). Sending opens the reply thread.
+4. **Threads** page: open a sent email and type a reply as the prospect under **DEMO — simulated prospect replies**. The agent classifies it, checks the calendar and shows its response at the top of the page **as a draft**. Edit it if you like, then **Send** or **Discard**. For example:
+   - "Interested, happy to chat" → a draft proposing 3 calendar-checked slots;
+   - "Option 2 works" → a booking-confirmation draft. The meeting is booked, with the .ics invite, only when you click **Book & send confirmation**;
    - "None of these, next week afternoon?" → counterproposal round 1. A second counterproposal hands off to a human;
-   - After booking, "Something came up, can we move it to Thursday afternoon?" → the booking is kept, new slots are offered, and picking one moves the same event (updated .ics).
    - "What's the pricing?" → handoff. "Unsubscribe" → suppressed. An out-of-office reply is classified separately.
-
-   Agent replies go through Resend to `DEMO_EMAIL` and also appear in the thread. The live LangGraph state shows on the right.
-4. **Calendar** page: week view showing seeded busy blocks and booked meetings.
-5. **Activity log** page: `DEMO ACTIVITY LOG — not a real CRM`.
+5. **Calendar** page: week view showing seeded busy blocks and booked meetings.
+6. **Activity log** page: `DEMO ACTIVITY LOG — not a real CRM`.
 
 ## Architecture
 
@@ -215,7 +213,7 @@ domains → scraper (robots, httpx → Playwright fallback, discovery, trafilatu
 10. **Blocked competitor sites:** drata.com serves a bot challenge (never bypassed). When a homepage can't be retrieved *and* the domain is on the configured competitor list (`COMPETITOR_DOMAINS`, from the rubric's examples), it is routed to `DISQUALIFIED`, and the log states there was no web evidence. Any other blocked domain stays `RETRIEVAL_FAILED`, not poor fit.
 11. **Staging/dev subdomains** (`stage.`, `dev.`, `qa.` …) found in sitemaps are excluded from discovery.
 12. **Email is sent through Resend, not Gmail.** The case study says to send via Gmail. This build uses Resend so it doesn't need a stored Gmail password or a Google OAuth setup. The outcome the case asks for is unchanged: every email is hard-coded to your own address (`DEMO_EMAIL`, enforced in code, CC/BCC always empty), and it lands in your inbox. On Resend's free tier, emails come from `onboarding@resend.dev`.
-13. **A person approves every cold email before it is sent.** The case study asks for automatic sending. This build deliberately stops at a draft (`DRAFT_READY`). In the web app's **Drafts** page, a reviewer reads the reasoning, edits the subject and body if needed, and clicks **Send**, **Save** or **Discard**. Automated checks on the edited text (addressed by name, no false "Re:", no "following up", no guarantees, length) are advisory. Each company can only be sent once. The AI's original and the reviewer's edits are both kept in the decision log. If QA fails after two revisions, the best-scoring version is still offered as a draft, flagged as failing QA. Replies from the reply agent (proposed slots, booking confirmations, answers) are still sent automatically.
+13. **A person approves every cold email before it is sent.** The case study asks for automatic sending. This build deliberately stops at a draft (`DRAFT_READY`). In the web app's **Drafts** page, a reviewer reads the reasoning, edits the subject and body if needed, and clicks **Send**, **Save** or **Discard**. Automated checks on the edited text (addressed by name, no false "Re:", no "following up", no guarantees, length) are advisory. Each company can only be sent once. The AI's original and the reviewer's edits are both kept in the decision log. If QA fails after two revisions, the best-scoring version is still offered as a draft, flagged as failing QA. The same applies to the **reply agent**: every response (proposed times, answers, clarifications, booking confirmations) is drafted on the thread page and sent only when a person clicks Send. For a booking, the calendar event is created **at approval time**, after a fresh availability check. If the slot was taken meanwhile, nothing is sent and the agent drafts alternative times instead. While a reply waits for review, the 48-hour no-reply clock is paused. A new prospect message replaces a stale draft, and discarding a reply sends nothing and hands the thread to a human. Set `REPLY_REVIEW=0` to send replies automatically.
 
 ## No-reply deadline automation
 

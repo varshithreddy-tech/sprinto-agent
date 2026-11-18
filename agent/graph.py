@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
@@ -35,8 +36,12 @@ def _last_agent_message(thread_id: str) -> str:
     return r["body"] if r else ""
 
 
-def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = None, now: Now | None = None):
+def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = None, now: Now | None = None,
+                review: bool | None = None):
+    """review=True (default from REPLY_REVIEW): agent replies become drafts a person approves; nothing is sent and
+    no meeting is booked until approval. review=False: each draft is approved immediately (same code path)."""
     now = now or (lambda: datetime.now(timezone.utc))
+    review = S.REPLY_REVIEW if review is None else review
     sender_factory = sender_factory or (lambda delivery: send_mod.get_sender(delivery == "dry-run"))
 
     def entry(event, detail=None):
@@ -58,6 +63,10 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
                     "pending_log": [entry("THREAD_OPENED", {"reply_deadline": msg["deadline"]})]}
         if msg.get("type") == "log_retry":
             return {**base, "skip_reason": "retrying failed activity-log writes" if carried else "nothing to retry"}
+        if msg.get("type") in ("approve_draft", "discard_draft"):
+            if not any(d["id"] == msg.get("draft_id") for d in state.get("pending_drafts") or []):
+                return {**base, "skip_reason": f"draft {msg.get('draft_id')} is not waiting for review"}
+            return {**base, "skip_reason": None, "classification": {"category": "review_action"}}
         if msg.get("type") == "deadline_tick":
             dl = state.get("reply_deadline")
             waiting = state.get("reply_status") in st.WAITING and state.get("meeting_status") not in st.BOOKED_MEETING
@@ -79,7 +88,22 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
             return {**base, "processed_message_ids": processed,
                     "skip_reason": f"thread paused ({state.get('reply_status')}); human handles further replies",
                     "pending_log": carried + [entry("MESSAGE_WHILE_PAUSED", {"message_id": mid})]}
-        return {**base, "processed_message_ids": processed, "escalation_reason": None}
+        upd = {**base, "processed_message_ids": processed, "escalation_reason": None}
+        if state.get("pending_drafts"):
+            # The prospect wrote again before our draft was sent: that draft is stale. Undo its unsent slot offer.
+            upd.update(_unsend_drafts(state, state["pending_drafts"]))
+            upd["pending_drafts"] = []
+            upd["pending_log"] = carried + [entry("REPLY_DRAFT_SUPERSEDED", {"drafts": [d["id"] for d in state["pending_drafts"]]})]
+        return upd
+
+    def _unsend_drafts(state, drafts) -> dict:
+        """Slots offered only in drafts that were never sent must not count as proposed/rejected."""
+        unsent = {s for d in drafts for s in d.get("slots", [])}
+        if not unsent:
+            return {}
+        prev = next((d.get("prev_last_proposed") for d in drafts if d.get("slots")), None)
+        return {"times_proposed": [s for s in state.get("times_proposed", []) if s not in unsent],
+                "last_proposed": prev if prev is not None else []}
 
     def classify_reply(state: st.ThreadState) -> dict:
         msg = state["incoming"]
@@ -145,32 +169,26 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
         return {"requested_slot": slot}
 
     def book_meeting(state: st.ThreadState) -> dict:
+        """Prepare the booking: fresh availability check, then a confirmation DRAFT. The calendar event is created
+        (or moved) only when that draft is approved — with another fresh check at that moment."""
         slot = state["requested_slot"]
         thread = _thread(state["thread_id"])
-        res = T.book_meeting(state, slot, thread, now())
-        logs = log_entry(state, "BOOKING_ATTEMPT", res)
-        if res["status"] == "BOOKED":
-            other = [s for s in state.get("times_proposed", []) if s != slot]
-            seq = int(state.get("event_sequence") or 0) + (1 if res["kind"] == "RESCHEDULED" else 0)
-            sent_ics = T.build_ics(res["event_id"], slot, res["title"], S.DEMO_EMAIL,
-                                   f"DEMO meeting for {thread['contact_name']} ({thread['company']}). 30 minutes.",
-                                   sequence=seq)
-            body = T._draft(f"Confirm the meeting is booked for [[SLOTS]] (event created; invite attached). "
-                            f"{'This replaces the previous time.' if res['kind'] == 'RESCHEDULED' else ''}",
-                            thread, state["incoming"]["body"])
+        chk = T.check_slot(state, slot, now())
+        logs = log_entry(state, "BOOKING_CHECK", chk)
+        if chk["status"] == "FREE":
+            moving = bool(state.get("event_id"))
+            body = T._draft(f"Confirm the meeting is booked for [[SLOTS]] (calendar invite attached). "
+                            f"{'This replaces the previous time.' if moving else ''}", thread, state["incoming"]["body"])
             line = fmt_slot(slot, state.get("prospect_tz"))
             body = body.replace("[[SLOTS]]", line) if "[[SLOTS]]" in body else body.rstrip() + f"\n\nBooked: {line}"
-            return {"confirmed_slot": slot, "event_id": res["event_id"], "meeting_status": res["kind"], "event_sequence": seq,
-                    "reply_status": st.MEETING_BOOKED,
-                    "rejected_slots": sorted(set(state.get("rejected_slots", [])) | set(other)),
-                    "outbox": [*state.get("outbox", []), {"kind": "booking_confirmation", "body": body, "ics": sent_ics}],
-                    "pending_log": logs + [entry("MEETING_" + res["kind"], {"event_id": res["event_id"], "slot": line})]}
-        if res["status"] == "UNCERTAIN":
+            item = {"kind": "booking_confirmation", "body": body, "slot": slot, "intended_status": st.MEETING_BOOKED}
+            return {"outbox": [*state.get("outbox", []), item], "pending_log": logs}
+        if chk["status"] == "UNCERTAIN":
             return {"meeting_status": "UNCERTAIN", "reply_status": st.BOOKING_UNCERTAIN, "pending_log": logs,
-                    "escalation_reason": f"BOOKING_UNCERTAIN: {res.get('reason')}"}
+                    "escalation_reason": f"BOOKING_UNCERTAIN: {chk.get('reason')}"}
         # BUSY or INVALID -> invalidate, reject that slot, propose alternatives
         return {"calendar_checked": False, "pending_log": logs,
-                "rejected_slots": sorted(set(state.get("rejected_slots", [])) | {slot}) if res["status"] == "BUSY" else state.get("rejected_slots", [])}
+                "rejected_slots": sorted(set(state.get("rejected_slots", [])) | {slot}) if chk["status"] == "BUSY" else state.get("rejected_slots", [])}
 
     def counterproposal(state: st.ThreadState) -> dict:
         rnd = int(state.get("reply_round", 0)) + 1
@@ -231,35 +249,131 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
         return {"reply_status": status, "escalation_reason": reason,
                 "pending_log": log_entry(state, "ESCALATED", {"reason": reason, "paused": "this prospect only"})}
 
+    def _send_one(state, upd, item, subject, body):
+        """Actually deliver one approved reply (DEMO_EMAIL only; stable op id per draft)."""
+        thread = _thread(state["thread_id"])
+        sender = sender_factory(state.get("delivery", "resend"))
+        op = send_mod.op_id(state["thread_id"], item["id"])
+        text = f"DEMO — reply-agent response intended for {thread['contact_name']}, {thread['contact_title']} at {thread['company']}\n\n{body}"
+        att = None
+        if item.get("ics"):
+            att = [{"filename": "invite.ics", "content": list(item["ics"].encode()), "content_type": "text/calendar"}]
+        res = send_mod.send_once(op, "reply_" + item["kind"], state["thread_id"], subject, text, sender, attachments=att)
+        mid = f"agent-{op}"
+        upd["agent_message_ids"] = [*upd.get("agent_message_ids", state.get("agent_message_ids", [])), mid]
+        db.insert_message(mid, state["thread_id"], "outbound", "agent", subject,
+                          text + ("\n\n[invite.ics attached]" if att else ""), res.get("provider_id"))
+        upd["pending_log"] = [*upd.get("pending_log", state.get("pending_log", [])),
+                              entry("REPLY_" + res["status"], {"kind": item["kind"], "op_id": op, "provider_id": res.get("provider_id"),
+                                                                "edited_by_reviewer": body != item.get("ai_body", body)})]
+        if res["status"] not in (send_mod.SENT, send_mod.DUPLICATE):
+            upd["escalation_reason"] = f"SEND_UNCERTAIN for {item['kind']}: {res.get('error')}"
+            upd["reply_status"] = st.ESCALATED
+            return False
+        deadline = (now() + timedelta(hours=S.REPLY_DEADLINE_HOURS)).replace(microsecond=0).isoformat()
+        db.execute("UPDATE threads SET reply_deadline=? WHERE thread_id=?", (deadline, state["thread_id"]))
+        upd["reply_deadline"] = deadline
+        return True
+
+    def _approve(state, draft, subject, body, depth=0) -> dict:
+        """Approve one draft: (bookings) re-check + create/move the event, then send. Returns state updates."""
+        upd: dict = {"pending_drafts": [d for d in state.get("pending_drafts", []) if d["id"] != draft["id"]]}
+        merged = {**state, **upd}
+        if draft["kind"] == "booking_confirmation":
+            thread = _thread(state["thread_id"])
+            res = T.book_meeting(merged, draft["slot"], thread, now())
+            upd["pending_log"] = [*state.get("pending_log", []), entry("BOOKING_ATTEMPT", res)]
+            if res["status"] == "UNCERTAIN":
+                upd.update(meeting_status="UNCERTAIN", reply_status=st.BOOKING_UNCERTAIN,
+                           escalation_reason=f"BOOKING_UNCERTAIN: {res.get('reason')}")
+                return upd
+            if res["status"] != "BOOKED":
+                # Taken since the draft was written: nothing is sent; draft alternative times instead.
+                rejected = sorted(set(state.get("rejected_slots", [])) | {draft["slot"]})
+                upd["rejected_slots"] = rejected
+                merged = {**merged, **upd}
+                try:
+                    chk = T.check_calendar(merged, now(), None)
+                except CalendarError as e:
+                    upd.update(reply_status=st.ESCALATED, escalation_reason=f"Calendar check failed: {e}")
+                    return upd
+                if not chk["slots"]:
+                    upd.update(reply_status=st.ESCALATED, escalation_reason="Slot no longer free and no alternatives found")
+                    return upd
+                alt = T.propose_times(chk["slots"], thread, "", state.get("prospect_tz"),
+                                      "Explain briefly that the time they picked is no longer available, then offer these instead.")
+                alt.update(intended_status=st.TIMES_PROPOSED, slots=chk["slots"])
+                upd.update(times_proposed=[*state.get("times_proposed", []), *chk["slots"]], last_proposed=list(chk["slots"]),
+                           calendar_checked=True, checked_at=chk["checked_at"], checked_slots=chk["slots"])
+                upd["pending_log"].append(entry("BOOKING_SLOT_TAKEN_AT_APPROVAL", {"slot": fmt_slot(draft["slot"])}))
+                return {**upd, **_queue({**state, **upd}, [alt], depth + 1)}
+            seq = int(state.get("event_sequence") or 0) + (1 if res["kind"] == "RESCHEDULED" else 0)
+            draft = {**draft, "ics": T.build_ics(res["event_id"], draft["slot"], res["title"], S.DEMO_EMAIL,
+                                                 f"DEMO meeting for {thread['contact_name']} ({thread['company']}). 30 minutes.",
+                                                 sequence=seq)}
+            other = [s for s in state.get("times_proposed", []) if s != draft["slot"]]
+            upd.update(confirmed_slot=draft["slot"], event_id=res["event_id"], meeting_status=res["kind"], event_sequence=seq,
+                       rejected_slots=sorted(set(state.get("rejected_slots", [])) | set(other)))
+            upd["pending_log"].append(entry("MEETING_" + res["kind"], {"event_id": res["event_id"], "slot": fmt_slot(draft["slot"])}))
+        if _send_one({**state, **upd}, upd, draft, subject, body) and draft.get("intended_status"):
+            upd["reply_status"] = draft["intended_status"]
+        return upd
+
+    def _queue(state, items, depth=0) -> dict:
+        """Turn agent replies into drafts. With review on, they wait for a person; otherwise approve each now."""
+        thread = _thread(state["thread_id"])
+        drafts = []
+        for it in items:
+            d = {**it, "id": uuid.uuid4().hex[:12], "subject": f"Re: {thread['subject']}", "ai_body": it["body"],
+                 "created_at": now().replace(microsecond=0).isoformat(),
+                 "intended_status": it.get("intended_status") or state.get("reply_status")}
+            if it.get("kind") == "propose_times":
+                d["slots"] = it.get("slots") or state.get("last_proposed", [])
+                d["prev_last_proposed"] = it.get("prev_last_proposed", [])
+            drafts.append(d)
+        upd: dict = {"outbox": [], "pending_drafts": [*state.get("pending_drafts", []), *drafts]}
+        if review or depth > 1:
+            upd["reply_status"] = st.REPLY_DRAFT_READY if review else state.get("reply_status")
+            upd["pending_log"] = [*state.get("pending_log", []),
+                                  *[entry("REPLY_DRAFTED", {"draft_id": d["id"], "kind": d["kind"]}) for d in drafts]]
+            return upd
+        cur = {**state, **upd}
+        for d in drafts:
+            res = _approve(cur, d, d["subject"], d["body"], depth)
+            cur = {**cur, **res}
+            upd.update(res)
+        return upd
+
     def send_replies(state: st.ThreadState) -> dict:
         outbox = state.get("outbox", [])
         if not outbox:
             return {}
-        thread = _thread(state["thread_id"])
-        sender = sender_factory(state.get("delivery", "resend"))
-        agent_ids = list(state.get("agent_message_ids", []))
-        logs = list(state.get("pending_log", []))
-        in_id = (state.get("incoming") or {}).get("message_id", "tick")
-        upd: dict = {}
-        for item in outbox:
-            op = send_mod.op_id(state["thread_id"], in_id, item["kind"])
-            subject = f"Re: {thread['subject']}"  # genuine reply in an existing thread
-            text = f"DEMO — reply-agent response intended for {thread['contact_name']}, {thread['contact_title']} at {thread['company']}\n\n{item['body']}"
-            att = None
-            if item.get("ics"):
-                att = [{"filename": "invite.ics", "content": list(item["ics"].encode()), "content_type": "text/calendar"}]
-            res = send_mod.send_once(op, "reply_" + item["kind"], state["thread_id"], subject, text, sender, attachments=att)
-            mid = f"agent-{op}"
-            agent_ids.append(mid)
-            db.insert_message(mid, state["thread_id"], "outbound", "agent", subject,
-                              text + ("\n\n[invite.ics attached]" if att else ""), res.get("provider_id"))
-            logs.append(entry("REPLY_" + res["status"], {"kind": item["kind"], "op_id": op, "provider_id": res.get("provider_id")}))
-            if res["status"] not in (send_mod.SENT, send_mod.DUPLICATE):
-                upd["escalation_reason"] = f"SEND_UNCERTAIN for {item['kind']}: {res.get('error')}"
-                upd["reply_status"] = st.ESCALATED
-        deadline = (now() + timedelta(hours=S.REPLY_DEADLINE_HOURS)).replace(microsecond=0).isoformat()
-        db.execute("UPDATE threads SET reply_deadline=? WHERE thread_id=?", (deadline, state["thread_id"]))
-        upd.update({"agent_message_ids": agent_ids, "outbox": [], "pending_log": logs, "reply_deadline": deadline})
+        items = []
+        for it in outbox:
+            it = dict(it)
+            if it.get("kind") == "propose_times":
+                it["prev_last_proposed"] = [s for s in state.get("times_proposed", []) if s not in it.get("slots", [])][-3:]
+            items.append(it)
+        return _queue(state, items)
+
+    def review_action(state: st.ThreadState) -> dict:
+        msg = state["incoming"]
+        draft = next(d for d in state["pending_drafts"] if d["id"] == msg["draft_id"])
+        if msg["type"] == "discard_draft":
+            upd = {"pending_drafts": [d for d in state["pending_drafts"] if d["id"] != draft["id"]],
+                   **_unsend_drafts(state, [draft]),
+                   "reply_status": st.ESCALATED,
+                   "escalation_reason": "Reviewer discarded the agent's reply; a human handles this thread",
+                   "pending_log": log_entry(state, "REPLY_DRAFT_DISCARDED", {"draft_id": draft["id"], "kind": draft["kind"]})}
+            return upd
+        subject = (msg.get("subject") or draft["subject"]).strip()
+        body = (msg.get("body") or draft["body"]).strip().replace("\r\n", "\n")
+        upd = _approve(state, draft, subject, body)
+        upd["pending_log"] = [*upd.get("pending_log", state.get("pending_log", [])),
+                              entry("REPLY_DRAFT_APPROVED", {"draft_id": draft["id"], "kind": draft["kind"],
+                                                             "edited": body != draft.get("ai_body")})]
+        if upd.get("pending_drafts") and not upd.get("reply_status"):
+            upd["reply_status"] = st.REPLY_DRAFT_READY
         return upd
 
     def update_activity_log(state: st.ThreadState) -> dict:
@@ -287,6 +401,8 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
             return "update_activity_log"
         if (state.get("classification") or {}).get("category") == "no_reply":
             return "escalate"
+        if (state.get("classification") or {}).get("category") == "review_action":
+            return "review_action"
         return "classify_reply"
 
     def after_classify(state) -> str:
@@ -311,8 +427,7 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
     def after_book(state) -> str:
         if state.get("reply_status") == st.BOOKING_UNCERTAIN:
             return "escalate"
-        if state.get("reply_status") == st.MEETING_BOOKED and state.get("confirmed_slot") == state.get("requested_slot") \
-                and state.get("outbox"):
+        if any(i.get("kind") == "booking_confirmation" for i in state.get("outbox", [])):
             return "send_replies"
         return "check_calendar"  # busy/invalid -> propose alternatives
 
@@ -336,7 +451,8 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
                      ("resolve_confirmation", resolve_confirmation), ("book_meeting", book_meeting),
                      ("counterproposal", counterproposal), ("reschedule", reschedule), ("stop_outreach", stop_outreach), ("suppress", suppress),
                      ("record_referral", record_referral), ("auto_message", auto_message), ("escalate", escalate),
-                     ("send_replies", send_replies), ("update_activity_log", update_activity_log)]:
+                     ("send_replies", send_replies), ("review_action", review_action),
+                     ("update_activity_log", update_activity_log)]:
         g.add_node(name, fn)
     g.add_edge(START, "ingest")
     g.add_conditional_edges("ingest", after_ingest)
@@ -354,6 +470,7 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
         g.add_edge(n, "update_activity_log")
     g.add_edge("escalate", "update_activity_log")
     g.add_edge("send_replies", "update_activity_log")
+    g.add_conditional_edges("review_action", lambda s: "escalate" if s.get("reply_status") == st.BOOKING_UNCERTAIN else "update_activity_log")
     g.add_edge("update_activity_log", END)
     return g.compile(checkpointer=checkpointer)
 
@@ -421,6 +538,18 @@ def process_inbound(thread_id: str, body: str, simulated: bool = True, author: s
     mid = message_id or send_mod.new_message_id()
     db.insert_message(mid, thread_id, "inbound", author, None, body, None, simulated=simulated)
     return (graph or get_graph()).invoke({"incoming": {"message_id": mid, "body": body, "author": author}}, _cfg(thread_id))
+
+
+def approve_reply(thread_id: str, draft_id: str, subject: str | None = None, body: str | None = None, graph=None) -> dict:
+    """A person approved (and possibly edited) an agent reply: book if needed, then send."""
+    _thread(thread_id)
+    return (graph or get_graph()).invoke({"incoming": {"type": "approve_draft", "draft_id": draft_id,
+                                                       "subject": subject, "body": body}}, _cfg(thread_id))
+
+
+def discard_reply(thread_id: str, draft_id: str, graph=None) -> dict:
+    _thread(thread_id)
+    return (graph or get_graph()).invoke({"incoming": {"type": "discard_draft", "draft_id": draft_id}}, _cfg(thread_id))
 
 
 LAST_DEADLINE_CHECK: dict = {"at": None, "escalated": [], "error": None}

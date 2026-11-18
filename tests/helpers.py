@@ -64,7 +64,8 @@ FAKE_HANDLERS = {
 
 
 class Env:
-    def __init__(self, tmp_path, monkeypatch, now=NOW):
+    def __init__(self, tmp_path, monkeypatch, now=NOW, review=False):
+        self.review = review  # existing tests exercise the auto-approve path; review tests pass review=True
         self.path = tmp_path / "test.db"
         monkeypatch.setattr(S, "DEMO_EMAIL", DEMO)
         monkeypatch.setattr(S, "DB_PATH", self.path)
@@ -91,9 +92,10 @@ class Env:
             self._pg_conns = getattr(self, "_pg_conns", []) + [cp_conn]
             saver = PostgresSaver(cp_conn)
             saver.setup()
-            return build_graph(saver, sender_factory=lambda d: self.sender, now=lambda: self.now)
+            return build_graph(saver, sender_factory=lambda d: self.sender, now=lambda: self.now, review=self.review)
         cp_conn = sqlite3.connect(str(self.path), check_same_thread=False)
-        return build_graph(SqliteSaver(cp_conn), sender_factory=lambda d: self.sender, now=lambda: self.now)
+        return build_graph(SqliteSaver(cp_conn), sender_factory=lambda d: self.sender, now=lambda: self.now,
+                           review=self.review)
 
     def open_thread(self, tid="acme.io"):
         from agent.graph import init_thread

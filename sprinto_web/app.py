@@ -104,7 +104,8 @@ def page(request: Request, name: str, **ctx):
     ctx["model"] = S.GEMINI_MODEL
     ctx["public"] = S.PUBLIC_ACCESS
     try:
-        ctx["drafts_count"] = len(pending_drafts())
+        ctx["drafts_count"] = len(pending_drafts()) + db.query_one(
+            "SELECT count(*) AS n FROM threads WHERE status=?", ("REPLY_DRAFT_READY",))["n"]
     except Exception:
         ctx["drafts_count"] = 0
     return templates.TemplateResponse(request, name, ctx)
@@ -189,9 +190,19 @@ def company(request: Request, domain: str):
                 msg=request.query_params.get("msg", ""), err=request.query_params.get("err", ""))
 
 
+def pending_reply_drafts() -> list[dict]:
+    from agent.graph import get_state
+    out = []
+    for t in db.query("SELECT * FROM threads WHERE status=? ORDER BY created_at DESC", ("REPLY_DRAFT_READY",)):
+        for d in (get_state(t["thread_id"]) or {}).get("pending_drafts") or []:
+            out.append({"thread_id": t["thread_id"], "company": t["company"], "name": t["contact_name"],
+                        "kind": d["kind"], "created_at": d.get("created_at"), "subject": d.get("subject")})
+    return out
+
+
 @app.get("/drafts", response_class=HTMLResponse)
 def drafts(request: Request):
-    return page(request, "drafts.html", rows=pending_drafts())
+    return page(request, "drafts.html", rows=pending_drafts(), replies=pending_reply_drafts())
 
 
 @app.post("/company/{domain}/draft")
@@ -249,7 +260,7 @@ def threads(request: Request):
 
 
 @app.get("/threads/{tid}", response_class=HTMLResponse)
-def thread(request: Request, tid: str, error: str = ""):
+def thread(request: Request, tid: str, error: str = "", msg: str = ""):
     from agent.calendar_provider import fmt_slot
     from agent.graph import get_state
     t = db.query_one("SELECT * FROM threads WHERE thread_id=?", (tid,))
@@ -260,11 +271,33 @@ def thread(request: Request, tid: str, error: str = ""):
     left = None
     if stt.get("reply_deadline") and stt.get("reply_status") in WAITING:
         left = (datetime.fromisoformat(stt["reply_deadline"]) - datetime.now(timezone.utc)).total_seconds() / 3600
-    return page(request, "thread.html", nav="threads", t=t, msgs=msgs, s=stt, error=error, left=left,
+    pending = [{**d, "slot_text": fmt_slot(d["slot"]) if d.get("slot") else None,
+                "slots_text": [fmt_slot(x) for x in d.get("slots", [])]} for d in stt.get("pending_drafts") or []]
+    return page(request, "thread.html", nav="threads", t=t, msgs=msgs, s=stt, error=error, msg=msg, left=left, pending=pending,
                 proposed=[fmt_slot(x) for x in stt.get("times_proposed", [])],
                 latest=[fmt_slot(x) for x in stt.get("last_proposed", [])],
                 rejected=[fmt_slot(x) for x in stt.get("rejected_slots", [])],
                 confirmed=fmt_slot(stt["confirmed_slot"]) if stt.get("confirmed_slot") else None)
+
+
+@app.post("/threads/{tid}/draft/{draft_id}")
+def thread_draft_action(tid: str, draft_id: str, action: str = Form(...), subject: str = Form(""), body: str = Form("")):
+    """Reviewer approves (optionally edited) or discards an agent reply draft."""
+    from urllib.parse import quote
+    from agent.graph import approve_reply, discard_reply
+    try:
+        if action == "discard":
+            discard_reply(tid, draft_id)
+            return RedirectResponse(f"/threads/{tid}?msg={quote('Reply discarded; thread handed to a human')}#latest", status_code=303)
+        if not rate_ok("sends", S.RATE_LIMIT_SENDS_PER_HOUR):
+            return RedirectResponse(f"/threads/{tid}?error={quote('Rate limit reached for sends; try later')}", status_code=303)
+        s = approve_reply(tid, draft_id, subject or None, body or None)
+        if s.get("skip_reason"):
+            return RedirectResponse(f"/threads/{tid}?error={quote(s['skip_reason'])}", status_code=303)
+        note = "Sent" if s.get("reply_status") != "REPLY_DRAFT_READY" else "Not sent: the slot was taken; review the new draft with alternative times"
+        return RedirectResponse(f"/threads/{tid}?msg={quote(note)}#latest", status_code=303)
+    except Exception as e:
+        return RedirectResponse(f"/threads/{tid}?error={quote(type(e).__name__ + ': ' + str(e)[:200])}", status_code=303)
 
 
 @app.post("/threads/{tid}/reply")
@@ -279,7 +312,7 @@ def thread_reply(tid: str, body: str = Form(...)):
         process_inbound(tid, body.strip(), simulated=True)
     except Exception as e:
         return RedirectResponse(f"/threads/{tid}?error={type(e).__name__}: {str(e)[:200]}", status_code=303)
-    return RedirectResponse(f"/threads/{tid}#latest", status_code=303)
+    return RedirectResponse(f"/threads/{tid}?msg=The%20agent%20drafted%20a%20reply%20%E2%80%94%20review%20it%20below", status_code=303)
 
 
 @app.get("/calendar", response_class=HTMLResponse)

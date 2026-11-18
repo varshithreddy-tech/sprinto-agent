@@ -5,6 +5,28 @@
 <h1>{{ t.subject }}</h1>
 <p class="muted small">{{ t.company }} · intended for {{ t.contact_name }}, {{ t.contact_title }} · delivered to DEMO_EMAIL only ({{ s.delivery or '' }})</p>
 {% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
+{% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+{% for d in pending %}
+<section class="card" id="review-{{ d.id }}" style="border:2px solid var(--accent)">
+  <h2 style="margin-top:0">Agent reply waiting for your review
+    <span class="pill">{{ {'propose_times':'proposes times','booking_confirmation':'books meeting','info':'answers question','clarify':'asks to clarify'}.get(d.kind, d.kind) }}</span></h2>
+  {% if d.kind == 'booking_confirmation' %}
+  <p class="small"><b>Meeting is not booked yet.</b> When you click Send, the agent re-checks <b>{{ d.slot_text }}</b>, creates the calendar event and attaches the invite. If the slot has been taken meanwhile, nothing is sent and you'll get a new draft with alternative times.</p>
+  {% elif d.slots_text %}
+  <p class="small">Calendar-checked slots offered: {{ d.slots_text|join(' · ') }}. If you change the times in the text, the agent won't know about it.</p>
+  {% endif %}
+  <form method="post" action="/threads/{{ t.thread_id }}/draft/{{ d.id }}">
+    <label class="small"><b>Subject</b></label>
+    <input type="text" name="subject" value="{{ d.subject }}">
+    <label class="small" style="display:block;margin-top:10px"><b>Body</b> <span class="muted">(goes to DEMO_EMAIL with the DEMO banner on top)</span></label>
+    <textarea name="body" rows="10" style="font:13px/1.5 ui-monospace, Consolas, monospace">{{ d.body }}</textarea>
+    <p style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="submit" name="action" value="send" data-label="Sending…">{{ 'Book & send confirmation' if d.kind == 'booking_confirmation' else 'Send reply' }}</button>
+      <button type="submit" name="action" value="discard" class="secondary" onclick="return confirm('Discard this reply? Nothing is sent and the thread is handed to a human.')">Discard</button>
+    </p>
+  </form>
+</section>
+{% endfor %}
 <div class="grid2">
 <section>
   {% for m in msgs %}
@@ -14,7 +36,7 @@
   </div>
   {% endfor %}
   <h2>DEMO — simulated prospect replies</h2>
-  <p class="small muted">Resend's free tier can't receive mail. Type a reply as the prospect: it's stored as an inbound message on this thread and the reply agent processes it live (Gemini classifies it, the calendar is checked, replies go to DEMO_EMAIL via Resend).</p>
+  <p class="small muted">Resend's free tier can't receive mail. Type a reply as the prospect: it's stored as an inbound message on this thread and the reply agent processes it live (Gemini classifies it, the calendar is checked). The agent's answer appears at the top of this page as a <b>draft for you to review</b> — nothing is sent or booked until you click Send.</p>
   <form method="post" action="/threads/{{ t.thread_id }}/reply" class="card">
     <textarea name="body" rows="4" placeholder="e.g. Interested — happy to talk next week." required></textarea>
     <p><button type="submit" data-label="Reply agent working… (up to ~30s)">Send as prospect</button></p>

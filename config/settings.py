@@ -28,6 +28,8 @@ PUBLIC_ACCESS = os.getenv("PUBLIC_ACCESS", "").strip().lower() in ("1", "true", 
 RATE_LIMIT_REPLIES_PER_HOUR = int(os.getenv("RATE_LIMIT_REPLIES_PER_HOUR", "40"))
 RATE_LIMIT_DOMAINS_PER_HOUR = int(os.getenv("RATE_LIMIT_DOMAINS_PER_HOUR", "30"))
 RATE_LIMIT_SENDS_PER_HOUR = int(os.getenv("RATE_LIMIT_SENDS_PER_HOUR", "20"))
+# Reply-agent responses wait for a person to review/edit/send (default). Set REPLY_REVIEW=0 to send automatically.
+REPLY_REVIEW = os.getenv("REPLY_REVIEW", "1").strip().lower() not in ("0", "false", "no", "off")
 ACTIVITY_SPOOL_PATH = DATA_DIR / "activity_spool.jsonl"   # failed log writes wait here for retry
 if ON_VERCEL:  # only /tmp is writable in a Vercel function
     ACTIVITY_SPOOL_PATH = Path("/tmp/activity_spool.jsonl")

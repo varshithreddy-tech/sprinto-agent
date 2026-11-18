@@ -229,6 +229,23 @@ def build_ics(event_id: str, slot_iso: str, title: str, attendee: str, descripti
         "STATUS:CONFIRMED", "END:VEVENT", "END:VCALENDAR", ""])
 
 
+def check_slot(state: dict, slot_iso: str, now: datetime) -> dict:
+    """Validate an exact slot and check it's free right now, WITHOUT booking (used when drafting a confirmation).
+    Returns {status: FREE|BUSY|INVALID, reason?}."""
+    s = parse_iso(slot_iso)
+    if s <= now + timedelta(minutes=30) or s > now + timedelta(days=S.SCHEDULING_HORIZON_DAYS):
+        return {"status": "INVALID", "reason": "slot is in the past or beyond the 30-day horizon", "slot": slot_iso}
+    if not is_working_slot(s):
+        return {"status": "INVALID", "reason": "outside organizer working hours (weekdays 09:00–18:00 IST)", "slot": slot_iso}
+    if slot_iso in state.get("rejected_slots", []):
+        return {"status": "INVALID", "reason": "slot was previously rejected", "slot": slot_iso}
+    try:
+        free = get_calendar().is_free(s, ignore_event=state.get("event_id"))
+    except Exception as e:
+        return {"status": "UNCERTAIN", "reason": str(e), "slot": slot_iso}
+    return {"status": "FREE" if free else "BUSY", "slot": slot_iso}
+
+
 def book_meeting(state: dict, slot_iso: str, thread: dict, now: datetime) -> dict:
     """Fresh availability check, then create/update. Confirms only after the event exists."""
     from outreach.send import op_id

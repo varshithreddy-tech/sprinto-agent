@@ -15,6 +15,7 @@ ESCALATED = "ESCALATED"
 OUT_OF_OFFICE = "OUT_OF_OFFICE"
 DELIVERY_NOTICE = "DELIVERY_NOTICE"
 BOOKING_UNCERTAIN = "BOOKING_UNCERTAIN"
+REPLY_DRAFT_READY = "REPLY_DRAFT_READY"   # agent reply drafted, waiting for a person
 
 STOPPED = {REJECTED, OPTED_OUT, ESCALATED, BOOKING_UNCERTAIN}
 # Statuses where the agent is waiting on the prospect, so the no-reply deadline applies.
@@ -51,6 +52,7 @@ class ThreadState(TypedDict, total=False):
     agent_message_ids: list[str]
     delivery: str                     # "resend" | "dry-run"
     referral: Optional[dict]
+    pending_drafts: list[dict]        # agent replies waiting for review (sent only on approval)
     # per-invocation scratch
     incoming: Optional[dict]
     classification: Optional[dict]
@@ -67,6 +69,6 @@ def initial_state(thread_id: str, deadline: str, organizer_tz: str, agent_messag
         "confirmed_slot": None, "prospect_tz": None, "organizer_tz": organizer_tz, "meeting_status": "NONE",
         "event_id": None, "event_sequence": 0, "crm_logged": True, "reply_deadline": deadline, "retry_counts": {}, "suppressed": False,
         "escalation_reason": None, "processed_message_ids": [], "agent_message_ids": list(agent_message_ids),
-        "delivery": delivery, "referral": None, "incoming": None, "classification": None, "outbox": [],
+        "delivery": delivery, "referral": None, "pending_drafts": [], "incoming": None, "classification": None, "outbox": [],
         "pending_log": [], "skip_reason": None, "window": None,
     }
