@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import time
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from pathlib import Path
@@ -51,6 +52,8 @@ OPEN_PATHS = ("/login", "/healthz", "/tasks/cron")
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     path = request.url.path
+    if S.PUBLIC_ACCESS:  # open demo: no login (cron stays protected by CRON_SECRET)
+        return await call_next(request)
     if not S.APP_PASSWORD:
         if path == "/healthz":
             return await call_next(request)
@@ -90,7 +93,7 @@ def logout():
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True, "db": "postgres" if db.using_pg() else "sqlite"}
+    return {"ok": True, "db": "postgres" if db.using_pg() else "sqlite", "public": S.PUBLIC_ACCESS}
 
 
 # ------------------------------------------------------------------------------------------------ helpers
@@ -99,7 +102,29 @@ def page(request: Request, name: str, **ctx):
     ctx["demo_email"] = S.DEMO_EMAIL or "(not set)"
     ctx["rubric"] = S.RUBRIC_VERSION
     ctx["model"] = S.GEMINI_MODEL
+    ctx["public"] = S.PUBLIC_ACCESS
     return templates.TemplateResponse(request, name, ctx)
+
+
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+
+def redact(v) -> str:
+    """Hide email addresses (the demo inbox, prospects' research-only emails) on rendered pages."""
+    if v is None:
+        return ""
+    text = v if isinstance(v, str) else json.dumps(v, indent=1, default=str, ensure_ascii=False)
+    return EMAIL_RE.sub("[email hidden]", text)
+
+
+def rate_ok(action: str, limit: int, n: int = 1) -> bool:
+    """Simple per-hour counter in the shared database; protects credits if the open link is passed around."""
+    key = f"rl:{action}:{datetime.now(timezone.utc):%Y%m%d%H}"
+    used = int(db.kv_get(key) or 0)
+    if used + n > limit:
+        return False
+    db.kv_set(key, str(used + n))
+    return True
 
 
 def jl(s):
@@ -119,7 +144,8 @@ def ist(iso: str | None, fmt: str = "%a %d %b %Y, %H:%M") -> str:
 
 
 templates.env.filters["ist"] = ist
-templates.env.filters["pretty"] = lambda v: json.dumps(v, indent=1, default=str, ensure_ascii=False)
+templates.env.filters["pretty"] = lambda v: redact(json.dumps(v, indent=1, default=str, ensure_ascii=False))
+templates.env.filters["redact"] = redact
 
 
 # ------------------------------------------------------------------------------------------------ pages
@@ -141,7 +167,7 @@ def company(request: Request, domain: str):
 
 
 @app.get("/run", response_class=HTMLResponse)
-def run_page(request: Request, queued: int = 0):
+def run_page(request: Request, queued: int = 0, limited: int = 0):
     default = (S.ROOT / "domains.txt").read_text(encoding="utf-8") if (S.ROOT / "domains.txt").exists() else ""
     hb = db.kv_get("worker_heartbeat")
     hb_age = None
@@ -149,13 +175,17 @@ def run_page(request: Request, queued: int = 0):
         hb_age = int((datetime.now(timezone.utc) - datetime.fromisoformat(hb)).total_seconds())
     rows = jobs.recent()
     active = any(r["status"] in (jobs.QUEUED, jobs.RUNNING) for r in rows)
-    return page(request, "run.html", default=default, rows=rows, active=active, queued=queued, hb_age=hb_age)
+    return page(request, "run.html", default=default, rows=rows, active=active, queued=queued, hb_age=hb_age,
+                limited=limited, limit=S.RATE_LIMIT_DOMAINS_PER_HOUR)
 
 
 @app.post("/run")
 def run_submit(domains: str = Form(""), mock_hunter: str | None = Form(None), dry_run: str | None = Form(None),
                force: str | None = Form(None)):
-    n = jobs.enqueue(domains.splitlines(), mock_hunter=bool(mock_hunter), dry_run=bool(dry_run), force=bool(force))
+    lines = [d for d in domains.splitlines() if d.split("#")[0].strip()]
+    if not rate_ok("domains", S.RATE_LIMIT_DOMAINS_PER_HOUR, len(lines)):
+        return RedirectResponse("/run?limited=1", status_code=303)
+    n = jobs.enqueue(lines, mock_hunter=bool(mock_hunter), dry_run=bool(dry_run), force=bool(force))
     return RedirectResponse(f"/run?queued={n}", status_code=303)
 
 
@@ -189,6 +219,9 @@ def thread_reply(tid: str, body: str = Form(...)):
     from agent.graph import process_inbound
     if not body.strip():
         return RedirectResponse(f"/threads/{tid}", status_code=303)
+    if not rate_ok("replies", S.RATE_LIMIT_REPLIES_PER_HOUR):
+        return RedirectResponse(f"/threads/{tid}?error=Rate limit reached ({S.RATE_LIMIT_REPLIES_PER_HOUR} simulated "
+                                f"replies per hour). Try again later.", status_code=303)
     try:
         process_inbound(tid, body.strip(), simulated=True)
     except Exception as e:

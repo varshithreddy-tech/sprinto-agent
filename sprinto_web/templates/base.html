@@ -47,7 +47,7 @@
     <a href="/calendar" class="{{ 'on' if nav=='calendar' }}">Calendar</a>
     <a href="/activity" class="{{ 'on' if nav=='activity' }}">Activity log</a>
   </nav>
-  <span class="meta">Rubric {{ rubric }} · {{ model }} · all email goes to DEMO_EMAIL only · <a href="/logout">Log out</a></span>
+  <span class="meta">Rubric {{ rubric }} · {{ model }} · all email goes to DEMO_EMAIL only{% if not public %} · <a href="/logout">Log out</a>{% endif %}</span>
 </header>
 <main>
 {% block content %}{% endblock %}

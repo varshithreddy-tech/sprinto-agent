@@ -245,7 +245,7 @@ The check is idempotent (escalated threads are no longer waiting). It only touch
 
 ## Deployment (Vercel + Neon)
 
-Live app: **https://sprinto-agent-nu.vercel.app** (`sprinto-agent.vercel.app` was already taken on Vercel) (login required — the password is `APP_PASSWORD` in your `.env` / Vercel env).
+Live app: **https://sprinto-agent-nu.vercel.app** (`sprinto-agent.vercel.app` was already taken on Vercel). It is **open for review: no login** (`PUBLIC_ACCESS=1` in Vercel), so anyone with the link can view every page, send simulated prospect replies and queue runs. Email addresses (the demo inbox, prospects' research-only emails) are hidden on the pages, and actions are rate-limited (40 simulated replies and 30 queued domains per hour). Remove `PUBLIC_ACCESS` in Vercel to bring back the `APP_PASSWORD` login. **Queued runs are only processed while the research worker is running** (`python run.py --worker`).
 
 How the components map onto the deployment:
 

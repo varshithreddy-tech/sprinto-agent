@@ -10,7 +10,7 @@
   {% for m in msgs %}
   <div class="card" {% if loop.last %}id="latest"{% endif %} style="{{ 'border-left:4px solid var(--accent)' if m.direction=='inbound' else '' }}">
     <div class="small muted">{{ 'Prospect (simulated)' if m.direction=='inbound' else 'Agent → DEMO_EMAIL' }} · {{ m.created_at|ist('%d %b %H:%M:%S') }}{% if m.provider_id %} · provider id {{ m.provider_id }}{% endif %}</div>
-    <div class="mail">{{ m.body }}</div>
+    <div class="mail">{{ m.body|redact }}</div>
   </div>
   {% endfor %}
   <h2>DEMO — simulated prospect replies</h2>
@@ -28,7 +28,7 @@
     {% if left is not none %}<p class="small {{ 'bad' if left <= 0 else 'muted' }}">No-reply deadline {{ s.reply_deadline|ist('%a %d %b %H:%M') }} · {{ ('%.1f h left'|format(left)) if left > 0 else 'passed — escalates on the next check' }}</p>{% endif %}
     <table class="kv">
       {% for k in ['meeting_status','confirmed_slot','event_id','event_sequence','reply_round','prospect_tz','organizer_tz','calendar_checked','checked_at','suppressed','escalation_reason','crm_logged','referral'] %}
-      <tr><td>{{ k }}</td><td class="small">{{ confirmed if k=='confirmed_slot' and confirmed else s.get(k) }}</td></tr>
+      <tr><td>{{ k }}</td><td class="small">{{ confirmed if k=='confirmed_slot' and confirmed else (s.get(k)|redact if s.get(k) is not none else '') }}</td></tr>
       {% endfor %}
     </table>
     <h3>Latest offered slots</h3>

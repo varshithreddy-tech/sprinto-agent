@@ -16,11 +16,11 @@
 {% if unc %}
 <p class="small muted">Looked up at Resend on every maintenance run and marked SENT if found. Never re-sent automatically.</p>
 <div class="scroll"><table><tr><th>Op</th><th>Domain</th><th>Kind</th><th>Status</th><th>Attempts</th><th>Detail</th><th>Updated</th></tr>
-{% for u in unc %}<tr><td class="small">{{ u.op_id[:12] }}</td><td>{{ u.domain }}</td><td>{{ u.kind }}</td><td>{{ u.status }}</td><td>{{ u.attempts }}</td><td class="small">{{ u.detail }}</td><td class="small">{{ u.updated_at|ist('%d %b %H:%M') }}</td></tr>{% endfor %}
+{% for u in unc %}<tr><td class="small">{{ u.op_id[:12] }}</td><td>{{ u.domain }}</td><td>{{ u.kind }}</td><td>{{ u.status }}</td><td>{{ u.attempts }}</td><td class="small">{{ u.detail|redact }}</td><td class="small">{{ u.updated_at|ist('%d %b %H:%M') }}</td></tr>{% endfor %}
 </table></div>
 {% else %}<p class="small muted">None — every send has a confirmed outcome.</p>{% endif %}
 <h2>Log</h2>
 <div class="scroll"><table><tr><th>Time</th><th>Domain</th><th>Event</th><th>Detail</th></tr>
-{% for r in rows %}<tr><td class="small muted" style="white-space:nowrap">{{ r.ts|ist('%d %b %H:%M:%S') }}</td><td>{{ r.domain }}</td><td>{{ r.event }}</td><td class="small">{{ (r.detail or '')[:300] }}</td></tr>{% endfor %}
+{% for r in rows %}<tr><td class="small muted" style="white-space:nowrap">{{ r.ts|ist('%d %b %H:%M:%S') }}</td><td>{{ r.domain }}</td><td>{{ r.event }}</td><td class="small">{{ (r.detail|redact)[:300] }}</td></tr>{% endfor %}
 </table></div>
 {% endblock %}

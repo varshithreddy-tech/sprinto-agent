@@ -10,6 +10,7 @@
   {% if hb_age is none %}<b>No worker has connected yet.</b>{% elif hb_age < 90 %}Worker online (seen {{ hb_age }}s ago).{% else %}<b>Worker offline</b> (last seen {{ (hb_age/60)|round|int }} min ago) — queued jobs wait until it's running.{% endif %}
 </div>
 {% if queued %}<div class="banner ok">Queued {{ queued }} domain(s).</div>{% endif %}
+{% if limited %}<div class="banner bad">Rate limit reached: at most {{ limit }} domains per hour can be queued. Try again later.</div>{% endif %}
 <form method="post" action="/run" class="card">
   <label for="domains"><b>Domains</b> <span class="muted small">one per line, # comments allowed</span></label>
   <textarea id="domains" name="domains" rows="10">{{ default }}</textarea>

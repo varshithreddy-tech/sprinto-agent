@@ -22,6 +22,11 @@ ON_VERCEL = bool(os.getenv("VERCEL"))
 APP_PASSWORD = os.getenv("APP_PASSWORD", "")
 SESSION_SECRET = os.getenv("SESSION_SECRET", "")
 CRON_SECRET = os.getenv("CRON_SECRET", "")
+# PUBLIC_ACCESS=1: no login — anyone with the link can view and use the app (assignment review). Email addresses
+# are hidden on pages and actions are rate-limited.
+PUBLIC_ACCESS = os.getenv("PUBLIC_ACCESS", "").strip().lower() in ("1", "true", "yes", "on")
+RATE_LIMIT_REPLIES_PER_HOUR = int(os.getenv("RATE_LIMIT_REPLIES_PER_HOUR", "40"))
+RATE_LIMIT_DOMAINS_PER_HOUR = int(os.getenv("RATE_LIMIT_DOMAINS_PER_HOUR", "30"))
 ACTIVITY_SPOOL_PATH = DATA_DIR / "activity_spool.jsonl"   # failed log writes wait here for retry
 if ON_VERCEL:  # only /tmp is writable in a Vercel function
     ACTIVITY_SPOOL_PATH = Path("/tmp/activity_spool.jsonl")
