@@ -33,6 +33,10 @@ def classify_fake(v: dict) -> dict:
         return {**base, "category": "reject"}
     if "talk to" in r:
         return {**base, "category": "referral", "referral": {"name": "Asha Rao", "title": "Head of IT", "email": None}}
+    if "reschedule" in r or "move it" in r or "move the meeting" in r:
+        m = re.search(r"(\d{4}-\d{2}-\d{2}) at (\d{2}:\d{2})(?: (\w+))?", r)
+        slot = {"date": m.group(1), "time": m.group(2), "timezone": m.group(3), "matches_proposed_index": None} if m else None
+        return {**base, "category": "reschedule", "requested_slot": slot}
     m = re.search(r"option (\d)", r)
     if m:
         return {**base, "category": "confirm_slot", "requested_slot": {"date": None, "time": None, "timezone": None,

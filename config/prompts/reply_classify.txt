@@ -3,6 +3,8 @@ TASK: Classify the prospect's latest reply in a Sprinto outbound thread and extr
 SLOTS WE PROPOSED (organizer timezone):
 {{proposed}}
 
+CURRENTLY BOOKED MEETING: {{booked}}
+
 OUR LAST MESSAGE:
 <data>
 {{last_agent_message}}
@@ -17,6 +19,7 @@ CATEGORIES (pick one):
 - interested: wants to talk / open to a meeting, but has not agreed to an exact slot
 - info_request: asks a question about Sprinto or wants material, without agreeing to meet
 - confirm_slot: explicitly agrees to ONE exact date+time (e.g. picks one of our proposed slots, or "Thursday 20 Nov at 3pm IST works, send the invite")
+- reschedule: a meeting is ALREADY BOOKED (see above) and the prospect wants to move it — to an exact new slot (fill requested_slot) or without saying when (fill window if they give a preference). Only use when a meeting is booked.
 - counterpropose: none of the proposed slots work / proposes a different day, range, or time window without a confirmed exact slot
 - reject: not interested / no thanks
 - opt_out: asks to stop emailing / unsubscribe / remove them
@@ -28,7 +31,7 @@ CATEGORIES (pick one):
 
 EXTRACT (null when not stated — never guess):
 - requested_slot: {"date": "YYYY-MM-DD", "time": "HH:MM" (24h), "timezone": IANA name or abbreviation EXACTLY as the prospect stated, or null, "matches_proposed_index": index into the proposed list or null}
-- window (for interested AND counterpropose — any stated day/time preference such as "next week", "afternoons", "after the 25th"; resolve relative dates using today): {"date_from": "YYYY-MM-DD"|null, "date_to": "YYYY-MM-DD"|null, "earliest_time": "HH:MM"|null, "latest_time": "HH:MM"|null, "timezone": stated tz or null}
+- window (for interested, counterpropose AND reschedule — any stated day/time preference such as "next week", "afternoons", "after the 25th"; resolve relative dates using today): {"date_from": "YYYY-MM-DD"|null, "date_to": "YYYY-MM-DD"|null, "earliest_time": "HH:MM"|null, "latest_time": "HH:MM"|null, "timezone": stated tz or null}
 - prospect_timezone: IANA name only if the prospect explicitly states their timezone or location-time (e.g. "I'm in London", "PST"); else null
 - ambiguity: describe anything unclear about date/time/timezone (e.g. "said 'Thursday' without a time", "no timezone given for 3pm"); else null
 - questions: list of questions asked

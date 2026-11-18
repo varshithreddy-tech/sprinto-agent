@@ -76,7 +76,9 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
 
     def classify_reply(state: st.ThreadState) -> dict:
         msg = state["incoming"]
-        c, meta = T.classify_reply(msg["body"], state.get("times_proposed", []), _last_agent_message(state["thread_id"]), now())
+        booked = state.get("confirmed_slot") if state.get("event_id") else None
+        latest = state.get("last_proposed") or state.get("times_proposed", [])[-3:]
+        c, meta = T.classify_reply(msg["body"], latest, _last_agent_message(state["thread_id"]), now(), booked)
         cd = c.model_dump()
         upd = {"classification": cd, "window": c.window}
         ptz = T.resolve_tz(c.prospect_timezone)
@@ -103,11 +105,16 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
             return {"escalation_reason": state.get("escalation_reason") or "No calendar-checked free slots available"}
         extra = ""
         c = state.get("classification") or {}
-        if c.get("category") == "confirm_slot":
-            extra = "Explain briefly that the time they picked is no longer available, then offer these instead."
+        moving = state.get("meeting_status") == "RESCHEDULE_REQUESTED"
+        if moving:
+            extra = ("They asked to move the meeting that is currently booked. Acknowledge that, say the current booking stays "
+                     "in place until they pick a new time, and offer these new times. ")
+        if c.get("requested_slot") and (c["requested_slot"].get("date") or c["requested_slot"].get("matches_proposed_index") is not None):
+            extra += "Explain briefly that the time they asked for is not available, then offer these instead."
         item = T.propose_times(slots, _thread(state["thread_id"]), state["incoming"]["body"], state.get("prospect_tz"), extra)
         return {"outbox": [*state.get("outbox", []), item], "times_proposed": [*state.get("times_proposed", []), *slots],
-                "reply_status": st.TIMES_PROPOSED, "meeting_status": "PROPOSED",
+                "last_proposed": list(slots),
+                "reply_status": st.TIMES_PROPOSED, "meeting_status": "RESCHEDULE_REQUESTED" if moving else "PROPOSED",
                 "pending_log": log_entry(state, "TIMES_PROPOSED", {"slots": [fmt_slot(s) for s in slots]})}
 
     def answer_info_request(state: st.ThreadState) -> dict:
@@ -135,15 +142,16 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
         logs = log_entry(state, "BOOKING_ATTEMPT", res)
         if res["status"] == "BOOKED":
             other = [s for s in state.get("times_proposed", []) if s != slot]
+            seq = int(state.get("event_sequence") or 0) + (1 if res["kind"] == "RESCHEDULED" else 0)
             sent_ics = T.build_ics(res["event_id"], slot, res["title"], S.DEMO_EMAIL,
                                    f"DEMO meeting for {thread['contact_name']} ({thread['company']}). 30 minutes.",
-                                   sequence=1 if res["kind"] == "RESCHEDULED" else 0)
+                                   sequence=seq)
             body = T._draft(f"Confirm the meeting is booked for [[SLOTS]] (event created; invite attached). "
                             f"{'This replaces the previous time.' if res['kind'] == 'RESCHEDULED' else ''}",
                             thread, state["incoming"]["body"])
             line = fmt_slot(slot, state.get("prospect_tz"))
             body = body.replace("[[SLOTS]]", line) if "[[SLOTS]]" in body else body.rstrip() + f"\n\nBooked: {line}"
-            return {"confirmed_slot": slot, "event_id": res["event_id"], "meeting_status": res["kind"],
+            return {"confirmed_slot": slot, "event_id": res["event_id"], "meeting_status": res["kind"], "event_sequence": seq,
                     "reply_status": st.MEETING_BOOKED,
                     "rejected_slots": sorted(set(state.get("rejected_slots", [])) | set(other)),
                     "outbox": [*state.get("outbox", []), {"kind": "booking_confirmation", "body": body, "ics": sent_ics}],
@@ -164,6 +172,21 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
         if rnd >= S.MAX_COUNTERPROPOSAL_ROUNDS:
             upd["escalation_reason"] = f"{rnd} counterproposal rounds without confirmation"
         return upd
+
+    def reschedule(state: st.ThreadState) -> dict:
+        if not state.get("event_id"):
+            # Nothing booked yet: this is an ordinary counterproposal.
+            upd = counterproposal(state)
+            upd["pending_log"] = upd["pending_log"] + [{"event": "RESCHEDULE_WITHOUT_BOOKING_TREATED_AS_COUNTERPROPOSAL"}]
+            return upd
+        old = state.get("confirmed_slot")
+        # A booked meeting starts a fresh negotiation: counterproposal rounds reset. The existing event is kept
+        # until a new slot is confirmed and then UPDATED (same event id), never deleted and re-created.
+        return {"reply_round": 0, "calendar_checked": False, "checked_at": None, "checked_slots": [],
+                "meeting_status": "RESCHEDULE_REQUESTED",
+                "rejected_slots": sorted(set(state.get("rejected_slots", [])) | ({old} if old else set())),
+                "pending_log": log_entry(state, "RESCHEDULE_REQUESTED", {"event_id": state.get("event_id"),
+                                                                          "current_slot": fmt_slot(old) if old else None})}
 
     def stop_outreach(state: st.ThreadState) -> dict:
         return {"reply_status": st.REJECTED, "pending_log": log_entry(state, "REJECTED_STOP_OUTREACH")}
@@ -255,7 +278,7 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
     def after_classify(state) -> str:
         cat = (state.get("classification") or {}).get("category")
         return {"interested": "check_calendar", "info_request": "answer_info_request", "confirm_slot": "resolve_confirmation",
-                "counterpropose": "counterproposal", "reject": "stop_outreach", "opt_out": "suppress",
+                "counterpropose": "counterproposal", "reschedule": "reschedule", "reject": "stop_outreach", "opt_out": "suppress",
                 "referral": "record_referral", "out_of_office": "auto_message", "delivery_notice": "auto_message",
                 }.get(cat, "escalate")
 
@@ -282,6 +305,14 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
     def after_counter(state) -> str:
         return "escalate" if state.get("escalation_reason") else "check_calendar"
 
+    def after_reschedule(state) -> str:
+        if state.get("escalation_reason"):
+            return "escalate"
+        rs = (state.get("classification") or {}).get("requested_slot") or {}
+        if state.get("event_id") and (rs.get("date") or rs.get("matches_proposed_index") is not None):
+            return "resolve_confirmation"  # exact new slot -> fresh check -> update the same event
+        return "check_calendar"
+
     def after_auto(state) -> str:
         return "escalate" if state.get("escalation_reason") else "update_activity_log"
 
@@ -289,7 +320,7 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
     for name, fn in [("ingest", ingest), ("classify_reply", classify_reply), ("check_calendar", check_calendar),
                      ("propose_times", propose_times), ("answer_info_request", answer_info_request),
                      ("resolve_confirmation", resolve_confirmation), ("book_meeting", book_meeting),
-                     ("counterproposal", counterproposal), ("stop_outreach", stop_outreach), ("suppress", suppress),
+                     ("counterproposal", counterproposal), ("reschedule", reschedule), ("stop_outreach", stop_outreach), ("suppress", suppress),
                      ("record_referral", record_referral), ("auto_message", auto_message), ("escalate", escalate),
                      ("send_replies", send_replies), ("update_activity_log", update_activity_log)]:
         g.add_node(name, fn)
@@ -302,6 +333,7 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
     g.add_conditional_edges("resolve_confirmation", after_resolve)
     g.add_conditional_edges("book_meeting", after_book)
     g.add_conditional_edges("counterproposal", after_counter)
+    g.add_conditional_edges("reschedule", after_reschedule)
     g.add_conditional_edges("auto_message", after_auto)
     g.add_conditional_edges("record_referral", lambda s: "escalate")
     for n in ("stop_outreach", "suppress"):

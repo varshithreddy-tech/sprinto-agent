@@ -43,6 +43,12 @@ TOOL_DESCRIPTIONS = {
         "dont_use_when": "The question needs pricing, contract, or specific security/legal commitments (escalate instead); do not treat as meeting consent.",
         "returns": "Outbox item {kind: 'info', body} or {needs_handoff: true, reason}.",
     },
+    "reschedule_meeting": {
+        "does": "Starts moving an already-booked meeting: keeps the existing event until a new slot is confirmed, marks the old slot rejected, and either books an exact new slot (via book_meeting, which updates the same event) or re-checks the calendar and proposes new times.",
+        "use_when": "A meeting is booked and the prospect asks to move it.",
+        "dont_use_when": "No meeting is booked (treat as a counterproposal) or the prospect cancels outright (escalate).",
+        "returns": "State update {meeting_status: RESCHEDULE_REQUESTED, rejected_slots, reply_round reset to 0}.",
+    },
     "book_meeting": {
         "does": "Re-checks availability for the exact requested slot and creates (or, for a reschedule, updates) the calendar event, then sends a confirmation with an .ics invite to DEMO_EMAIL.",
         "use_when": "Prospect explicitly agreed to one exact slot whose date, time and timezone are resolved.",
@@ -105,18 +111,20 @@ class Classification(BaseModel):
     reason: str = ""
 
 
-def classify_reply(reply: str, times_proposed: list[str], last_agent_message: str, now: datetime) -> tuple[Classification, dict]:
-    proposed = "\n".join(f"[{i}] {fmt_slot(s)}  ({s})" for i, s in enumerate(times_proposed[-3:])) or "(none yet)"
+def classify_reply(reply: str, times_proposed: list[str], last_agent_message: str, now: datetime,
+                   booked_slot: str | None = None) -> tuple[Classification, dict]:
+    proposed = "\n".join(f"[{i}] {fmt_slot(s)}  ({s})" for i, s in enumerate(times_proposed)) or "(none yet)"
     local = now.astimezone(org_tz())
     return llm.get_llm().json("reply_classify", {
         "today": local.date().isoformat(), "weekday": local.strftime("%A"), "proposed": proposed,
+        "booked": fmt_slot(booked_slot) if booked_slot else "none",
         "last_agent_message": last_agent_message[:1500], "reply": reply[:3000]}, Classification)
 
 
 def resolve_slot(c: Classification, state: dict) -> tuple[Optional[str], Optional[str]]:
     """Return (slot_iso, problem). Never infers the prospect's timezone from the organizer's."""
     rs = c.requested_slot
-    recent = state.get("times_proposed", [])[-3:]
+    recent = state.get("last_proposed") or state.get("times_proposed", [])[-3:]
     if rs and rs.matches_proposed_index is not None and 0 <= rs.matches_proposed_index < len(recent):
         # They picked from our explicit IST-labelled list: the slot is exact.
         return recent[rs.matches_proposed_index], None

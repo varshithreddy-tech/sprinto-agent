@@ -69,6 +69,7 @@ Domains already sent are skipped on re-run (resume after a restart). Add `--forc
    - "Interested, happy to chat" → the agent checks the calendar and proposes 3 slots;
    - "Option 2 works" → the agent re-checks that slot, books it, and emails a confirmation with an `.ics` invite;
    - "None of these, next week afternoon?" → counterproposal round 1. A second counterproposal hands off to a human;
+   - After booking, "Something came up, can we move it to Thursday afternoon?" → the booking is kept, new slots are offered, and picking one moves the same event (updated .ics).
    - "What's the pricing?" → handoff. "Unsubscribe" → suppressed. An out-of-office reply is classified separately.
 
    Agent replies go through Resend to `DEMO_EMAIL` and also appear in the thread. The live LangGraph state shows on the right.
@@ -103,7 +104,7 @@ domains → scraper (robots, httpx → Playwright fallback, discovery, trafilatu
 - **Research:** `QUALIFIED`, `LOW_PRIORITY`, `DISQUALIFIED`, `INSUFFICIENT_EVIDENCE`, `RETRIEVAL_FAILED`
 - **Outreach:** `NO_SUITABLE_CONTACT`, `INSUFFICIENT_PAIN_EVIDENCE`, `EMAIL_QA_FAILED`, `EMAIL_SENT` / `DRY_RUN_SENT`, `SEND_UNCERTAIN`
 - **Integrations:** `HUNTER_QUOTA_PAUSED`, `HUNTER_SETUP_ERROR`, `HUNTER_PAUSED`
-- **Reply agent:** `AWAITING_REPLY`, `TIMES_PROPOSED`, `INFO_SENT`, `CLARIFICATION_REQUESTED`, `MEETING_BOOKED`, `REJECTED`, `OPTED_OUT`, `OUT_OF_OFFICE`, `DELIVERY_NOTICE`, `ESCALATED`, `BOOKING_UNCERTAIN`
+- **Reply agent:** `AWAITING_REPLY`, `RESCHEDULE_REQUESTED` (meeting_status), `TIMES_PROPOSED`, `INFO_SENT`, `CLARIFICATION_REQUESTED`, `MEETING_BOOKED`, `REJECTED`, `OPTED_OUT`, `OUT_OF_OFFICE`, `DELIVERY_NOTICE`, `ESCALATED`, `BOOKING_UNCERTAIN`
 
 ### Safety guards
 
@@ -122,7 +123,7 @@ domains → scraper (robots, httpx → Playwright fallback, discovery, trafilatu
 5. **Timing window rule (code):** Level 2 needs an audit initiative, relevant hiring, or a compliance deadline dated within 183 days. Level 1 needs any of those, or an expansion or enterprise launch, dated within 365 days. Undated signals score 0, so a live job post with no visible date scores 0, as the rubric requires.
 6. **Counterproposal limit:** the 2nd counterproposal without a confirmation triggers handoff, with `reply_round` = 2.
 7. **Mock Hunter fixtures** (`tests/fixtures/hunter/*.json`) contain **fictional** people, clearly labelled. Because their names don't appear on the company's own pages, company association is correctly capped at 1.
-8. **Rescheduling:** if a meeting is already booked and the prospect confirms a new exact slot, the existing event is updated (same event ID, ICS `SEQUENCE:1`).
+8. **Rescheduling:** the reply classifier has a `reschedule` category, used only when a meeting is booked. The existing event is **kept until a new slot is confirmed**, then **updated in place**: same event ID, and the ICS `SEQUENCE` goes up by 1 on every move, so calendar apps update the invite instead of duplicating it. The old slot is marked rejected and never offered again. An exact new slot gets a fresh availability check; a busy one gets alternatives, with the booking untouched. A reschedule starts a fresh negotiation (`reply_round` resets to 0). A "reschedule" request with nothing booked is treated as a normal counterproposal. "Option N" / "the first one" always refers to the latest batch of offered slots (`last_proposed`), even when that batch has fewer than 3.
 9. **Splash/storefront pages:** the page `<title>` and meta description are always kept. If dropping short blocks would leave a page under 30 words, the short blocks are kept instead. Without this, bewakoof.com's homepage cleaned to nothing and showed up as a retrieval failure instead of a clear non-SaaS business.
 10. **Blocked competitor sites:** drata.com serves a bot challenge (never bypassed). When a homepage can't be retrieved *and* the domain is on the configured competitor list (`COMPETITOR_DOMAINS`, from the rubric's examples), it is routed to `DISQUALIFIED`, and the log states there was no web evidence. Any other blocked domain stays `RETRIEVAL_FAILED`, not poor fit.
 11. **Staging/dev subdomains** (`stage.`, `dev.`, `qa.` …) found in sitemaps are excluded from discovery.
