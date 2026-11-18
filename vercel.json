@@ -5,6 +5,5 @@
       "includeFiles": "{sprinto_web/**,agent/**,outreach/**,storage/**,config/**,llm.py,domains.txt}"
     }
   },
-  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }],
   "crons": [{ "path": "/tasks/cron", "schedule": "30 3 * * *" }]
 }
