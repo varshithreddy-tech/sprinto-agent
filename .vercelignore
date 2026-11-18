@@ -1,14 +1,15 @@
-.venv
-data
-tests
+/.venv
+/data
+/tests
 *.db
 .pytest_cache
 __pycache__
-# local-only entry points (Streamlit dashboard, CLI, research pipeline) are not deployed
-app.py
-run.py
-pipeline.py
-scraper
-research
-scripts
-requirements-local.txt
+# local-only entry points (Streamlit dashboard, CLI, research pipeline) are not deployed.
+# Leading "/" = repo root only (without it, "app.py" would also drop sprinto_web/app.py).
+/app.py
+/run.py
+/pipeline.py
+/scraper
+/research
+/scripts
+/requirements-local.txt
