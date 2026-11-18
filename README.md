@@ -10,6 +10,90 @@ Paste a list of domains and the agent works end to end: it researches each compa
 - picks the contact;
 - enforces every guard.
 
+## ICP definition and rationale: who counts as a "right company"
+
+> These are this project's own working rules for prospecting fit, derived from the case brief and Sprinto's product. They are **not** Sprinto's official internal ICP. Every weight and threshold lives in `config/settings.py` and is enforced in code (`research/scoring.py`, unit-tested).
+
+### Starting point
+
+Sprinto sells compliance automation (SOC 2, ISO 27001, GDPR) to SaaS companies. The brief describes the buyer as *SaaS, typically Series A–C, preparing for a compliance audit or under pressure from enterprise customers to get certified.* So two conditions have to hold for Sprinto to be relevant:
+
+1. **The company has the problem Sprinto solves.** It runs software that handles customer data, and it has (or will soon have) real compliance work: audits, frameworks, controls, customer security reviews.
+2. **Someone outside is asking for proof.** Enterprise or regulated customers want certifications, questionnaires and trust documentation.
+
+A reason to reach out *now* makes a prospect better, but it isn't required.
+
+### Why not filter on funding stage and headcount
+
+"Series A–C" describes the typical buyer, but it's a poor filter for an automated system:
+
+- **It's often not published on the company's own site,** and the agent reads only that site, never LinkedIn or databases.
+- **Funding isn't budget, and a stage says nothing about compliance pressure.** A Series B company selling to SMBs may never need SOC 2. A seed-stage company selling to banks may need it urgently.
+
+So stage and employee count are **extracted as evidence when present, but not scored**. The rubric scores the *observable causes* of compliance demand instead.
+
+### The five dimensions (100 points)
+
+Each dimension gets a level of 0, 1 or 2. Points = weight × level ÷ 2.
+
+| Dimension | Weight | Why it matters for Sprinto | Level 1 | Level 2 |
+|---|---|---|---|---|
+| **Business & technology fit** | 25 | Sprinto only works for companies running software that holds customer data. Without that, there's nothing to certify. | Software/tech service, delivery unclear | Explicit cloud software or digital service handling customer data |
+| **Customer trust exposure** | 20 | Enterprise and regulated buyers are what *force* SOC 2 / ISO 27001: they send security questionnaires and block deals without certification. This is the "pressure from enterprise customers" part of the ICP. | B2B, buyer details limited | Explicit enterprise offering, named enterprise customers, or regulated segments |
+| **Relevant compliance workload** | 25 | The direct signal that Sprinto's work exists here: audits, frameworks, ongoing controls, trust centres. Weighted equal-highest with business fit because it's the closest proxy for "preparing for an audit". | Security documentation or broad compliance mentions | Explicit audit, framework, certification, ongoing controls or customer-assurance activity |
+| **Reason to engage now** | 20 | Timing makes an email land: an active audit, security/compliance hiring, a compliance deadline. It's weighted below fit because a great-fit company is still worth contacting without a dated trigger. | Dated expansion or enterprise launch within 12 months | Audit initiative, relevant hiring or compliance deadline within 6 months |
+| **Delivery complexity** | 10 | Several frameworks, products or environments make manual compliance painful, which is where automation pays off most. Weighted lowest because it raises value, not relevance. | Integrations or several products | Documented multiple frameworks, environments or products |
+
+### Qualification rule
+
+A company is **QUALIFIED** only when all three hold:
+
+1. **Total ≥ 65.** A company that's strong on fit, trust exposure and compliance workload (25 + 20 + 25 = 70) qualifies even with no dated trigger. One that's weak on fit or compliance can't reach 65 on timing and complexity alone.
+2. **Business fit = 2.** Explicit software handling customer data is non-negotiable: Sprinto can't help otherwise, however good the other signals look.
+3. **Compliance workload ≥ 1.** There must be at least some evidence that compliance work exists. Without it, the email would be a guess.
+
+### Routing when a company doesn't qualify
+
+| Outcome | When |
+|---|---|
+| **Research more** | A dimension is 0 because evidence is *missing* (not negative), and filling it could change the outcome. The agent fetches pages that answer that specific question: product, customers, security/trust or careers/news. That's up to 3 extra rounds of up to 2 pages. |
+| `INSUFFICIENT_EVIDENCE` | Still missing decision-relevant evidence after the research budget is spent. |
+| `LOW_PRIORITY` | Evidence is there but below the threshold, and even the best case for the missing parts couldn't reach 65. |
+| `DISQUALIFIED` | Explicitly not a software business, or a direct compliance-automation competitor (Vanta, Drata, Secureframe, Scrut, Sprinto and similar). |
+| `RETRIEVAL_FAILED` | The site couldn't be read (blocked, bot challenge, empty). This is **never** treated as poor fit. |
+
+### Evidence rules: what doesn't count as a signal
+
+- **No badge found ≠ no compliance.** A missing SOC 2 logo is "unknown", not a deficiency to pitch against.
+- **An existing SOC 2 / ISO 27001 does not disqualify.** Certified companies still have renewals, continuous controls, evidence collection and customer reviews. That's exactly Sprinto's ongoing work. atlan.com, for example, qualified at 90.
+- **Funding ≠ budget; enterprise customers ≠ delayed deals; no team page ≠ no security team; first-party claims ≠ independent verification.**
+- **Undated timing signals score 0.** "We're hiring" without a date isn't a reason to engage *now*.
+- **Every fact needs a source URL and an exact quote that code finds on the page.** Otherwise the fact is downgraded to "unknown" and can't support a score.
+
+### From the right company to the right person, pains and email
+
+- **Who to contact** (10-point score: company association, functional ownership, ability to drive action, match to need, identity quality; pass ≥ 8). Every Hunter candidate is scored, never just the first. Preference order: compliance/GRC leader, then security leader/CISO, then CTO/VP Engineering when no security owner exists, then a technical founder only where the company is evidently founder-led. That order follows who actually owns an audit. At SpotDraft, no security or compliance owner appeared in Hunter's results, so the CTO was chosen. The CEO, COO and Head of Legal each scored 7/10 and didn't pass.
+- **Pains** (each ≥ 7/10, two distinct): each must rest on a verified fact about *that* company, matter to *that* person's role, and map to one of Sprinto's four approved capabilities: compliance preparation, evidence collection, continuous control monitoring, customer trust documentation. They're always worded as hypotheses. The agent never invents manual work, lost revenue, urgency or dissatisfaction.
+- **Email** (QA ≥ 8/10 plus mandatory checks, up to 2 revisions): one verified hook, one tentative pain, one capability, one easy question, addressed by name, about 80–120 words.
+
+### How the definition behaved on the test list
+
+The 9 domains in `domains.txt` cover strong fits, a certified company, an ambiguous case, two competitors and a non-SaaS business. Latest recorded outcomes:
+
+| Domain | Total | Outcome | Why |
+|---|---|---|---|
+| spotdraft.com | 80 | Qualified → **email sent** | Cloud CLM handling contract data; named enterprise customers; SOC 2 Type II, ISO 27001, GDPR, HIPAA |
+| everstage.com | 75 | Qualified → **email sent** | Cloud incentive-compensation (sales commission) platform for enterprises; ISO 27001:2022, GDPR data-transfer clauses, India's DPDP Act |
+| rocketlane.com | 80 | Qualified; no contact passed 8/10 | Enterprise PSA/onboarding platform with SOC 2 Type II, ISO 27001 and more (two extra research rounds); live Hunter results had no qualifying owner |
+| zluri.com | 80 | Qualified; no contact passed 8/10 | Strong fit; same contact outcome |
+| atlan.com | 90 | Qualified; no contact passed 8/10 | Already certified, and **not** auto-disqualified, by design |
+| hevodata.com | 62.5 | `INSUFFICIENT_EVIDENCE` | Borderline: scored 75 (qualified) in an earlier run. Model judgement on a thin site varies between runs, which is why it's routed to "insufficient evidence", not rejected. |
+| vanta.com | – | `DISQUALIFIED` | Compliance-automation competitor, supported by page evidence |
+| drata.com | – | `DISQUALIFIED` | Competitor: its own site describes a compliance-automation and trust-management platform (page evidence plus the configured competitor list) |
+| bewakoof.com | 0 | `DISQUALIFIED` | Explicitly a consumer clothing retailer |
+
+Every outcome is traceable in the dashboard's company pages: evidence with quotes, the five levels with reasons and any code adjustments, each research round, every contact candidate, both pains and every email draft with its QA scores.
+
 ## Setup
 
 ```bash
