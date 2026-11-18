@@ -1,0 +1,29 @@
+TASK: Assign a level (0, 1 or 2) for each qualification dimension for {{domain}}, using ONLY the verified facts below (cite fact ids). Code will compute points, check date windows and apply thresholds — you only judge levels.
+
+CONTEXT: Sprinto automates compliance certifications (SOC 2, ISO 27001, GDPR) for SaaS companies. Ideal prospects: SaaS companies (often Series A–C) preparing for audits or under enterprise-customer pressure to certify. Qualification = prospecting fit, not buying intent. Existing SOC 2/ISO 27001 does NOT disqualify (ongoing controls/renewals/new frameworks are still work).
+
+DIMENSIONS
+1 business_fit — L1: technology/software service, delivery unclear. L2: explicit cloud software or digital service handling customer data.
+2 trust_exposure — L1: B2B offering, buyer details limited. L2: explicit enterprise offering, named enterprise customers, or regulated customer segments.
+3 compliance_workload — L1: security documentation or broad compliance mentions. L2: explicit audit, framework, certification, ongoing controls, or customer-assurance activity (e.g. trust center, security questionnaires).
+4 reason_now — L1: dated expansion or enterprise launch within 12 months. L2: active audit initiative, relevant (security/compliance) hiring, or explicit compliance deadline within 6 months. Today is {{today}}. Undated signals score 0. Also list every candidate timing signal in timing_signals with its fact id and signal_type (audit_initiative | relevant_hiring | compliance_deadline | expansion | enterprise_launch) — code checks the dates.
+5 delivery_complexity — L1: integrations or several products. L2: documented multiple frameworks, environments, or products creating distinct compliance work.
+
+LEVEL 0 must state zero_reason: "missing" (no evidence either way — more research could help) or "negative" (explicit evidence against).
+
+ALSO JUDGE
+- competitor: is this company itself a compliance-automation platform that competes with Sprinto (like Vanta, Drata, Secureframe, Scrut, Sprinto)? Needs fact ids.
+- explicitly_unrelated: is there explicit evidence the business is not a software/digital service (e.g. a consumer retail brand selling apparel)? Needs fact ids. Missing info is NOT explicit.
+- founder_led: is there evidence the company is small/founder-led such that a technical founder would own compliance? Needs fact ids; default false.
+
+Return JSON:
+{"dimensions": {"business_fit": {"level": 0|1|2, "reason": str, "evidence_ids": [str], "zero_reason": "missing"|"negative"|null}, "trust_exposure": {...}, "compliance_workload": {...}, "reason_now": {...}, "delivery_complexity": {...}},
+ "timing_signals": [{"fact_id": str, "signal_type": str}],
+ "competitor": {"value": bool, "evidence_ids": [str], "reason": str},
+ "explicitly_unrelated": {"value": bool, "evidence_ids": [str], "reason": str},
+ "founder_led": {"value": bool, "evidence_ids": [str]}}
+
+VERIFIED FACTS:
+<data>
+{{facts}}
+</data>

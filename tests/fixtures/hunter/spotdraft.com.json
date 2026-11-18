@@ -1,0 +1,117 @@
+{
+ "_note": "FICTIONAL test fixture for --mock-hunter. People below are invented and are not real employees.",
+ "data": {
+  "domain": "spotdraft.com",
+  "organization": "SpotDraft",
+  "pattern": "{first}.{last}",
+  "emails": [
+   {
+    "value": "ravi.placeholder@spotdraft.com",
+    "type": "personal",
+    "confidence": 90,
+    "sources": [
+     {
+      "domain": "spotdraft.com",
+      "uri": "https://spotdraft.com/security",
+      "extracted_on": "2025-11-02",
+      "last_seen_on": "2026-10-02",
+      "still_on_page": true
+     }
+    ],
+    "first_name": "Ravi",
+    "last_name": "Placeholder",
+    "position": "Information Security Manager",
+    "seniority": "senior",
+    "department": "it",
+    "linkedin": null,
+    "twitter": null,
+    "phone_number": null,
+    "verification": {
+     "date": "2026-10-02",
+     "status": "valid"
+    }
+   },
+   {
+    "value": "sana.demoworth@spotdraft.com",
+    "type": "personal",
+    "confidence": 93,
+    "sources": [
+     {
+      "domain": "spotdraft.com",
+      "uri": "https://spotdraft.com/about",
+      "extracted_on": "2025-11-02",
+      "last_seen_on": "2026-06-30",
+      "still_on_page": true
+     }
+    ],
+    "first_name": "Sana",
+    "last_name": "Demoworth",
+    "position": "Chief Technology Officer",
+    "seniority": "executive",
+    "department": "engineering",
+    "linkedin": null,
+    "twitter": null,
+    "phone_number": null,
+    "verification": {
+     "date": "2026-06-30",
+     "status": "valid"
+    }
+   },
+   {
+    "value": "tom.fakely@spotdraft.com",
+    "type": "personal",
+    "confidence": 85,
+    "sources": [
+     {
+      "domain": "spotdraft.com",
+      "uri": "https://spotdraft.com/blog",
+      "extracted_on": "2025-11-02",
+      "last_seen_on": "2026-05-02",
+      "still_on_page": true
+     }
+    ],
+    "first_name": "Tom",
+    "last_name": "Fakely",
+    "position": "Account Executive",
+    "seniority": "junior",
+    "department": "sales",
+    "linkedin": null,
+    "twitter": null,
+    "phone_number": null,
+    "verification": {
+     "date": "2026-05-02",
+     "status": "valid"
+    }
+   },
+   {
+    "value": "lia.stubbs@spotdraft.com",
+    "type": "personal",
+    "confidence": 70,
+    "sources": [
+     {
+      "domain": "spotdraft.com",
+      "uri": "https://spotdraft.com/blog",
+      "extracted_on": "2025-11-02",
+      "last_seen_on": "2025-01-15",
+      "still_on_page": true
+     }
+    ],
+    "first_name": "Lia",
+    "last_name": "Stubbs",
+    "position": "Legal Operations Lead",
+    "seniority": "senior",
+    "department": "legal",
+    "linkedin": null,
+    "twitter": null,
+    "phone_number": null,
+    "verification": {
+     "date": "2025-01-15",
+     "status": "valid"
+    }
+   }
+  ]
+ },
+ "meta": {
+  "results": 4
+ }
+}

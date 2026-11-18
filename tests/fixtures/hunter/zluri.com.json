@@ -1,0 +1,91 @@
+{
+ "_note": "FICTIONAL test fixture for --mock-hunter. People below are invented and are not real employees.",
+ "data": {
+  "domain": "zluri.com",
+  "organization": "Zluri",
+  "pattern": "{first}.{last}",
+  "emails": [
+   {
+    "value": "nikhil.mockerjee@zluri.com",
+    "type": "personal",
+    "confidence": 92,
+    "sources": [
+     {
+      "domain": "zluri.com",
+      "uri": "https://zluri.com/careers",
+      "extracted_on": "2025-11-02",
+      "last_seen_on": "2026-10-21",
+      "still_on_page": true
+     }
+    ],
+    "first_name": "Nikhil",
+    "last_name": "Mockerjee",
+    "position": "Director, GRC",
+    "seniority": "executive",
+    "department": "management",
+    "linkedin": null,
+    "twitter": null,
+    "phone_number": null,
+    "verification": {
+     "date": "2026-10-21",
+     "status": "valid"
+    }
+   },
+   {
+    "value": "priya.testwal@zluri.com",
+    "type": "personal",
+    "confidence": 95,
+    "sources": [
+     {
+      "domain": "zluri.com",
+      "uri": "https://zluri.com/security",
+      "extracted_on": "2025-11-02",
+      "last_seen_on": "2026-09-30",
+      "still_on_page": true
+     }
+    ],
+    "first_name": "Priya",
+    "last_name": "Testwal",
+    "position": "CISO",
+    "seniority": "executive",
+    "department": "it",
+    "linkedin": null,
+    "twitter": null,
+    "phone_number": null,
+    "verification": {
+     "date": "2026-09-30",
+     "status": "valid"
+    }
+   },
+   {
+    "value": "omar.dummyani@zluri.com",
+    "type": "personal",
+    "confidence": 84,
+    "sources": [
+     {
+      "domain": "zluri.com",
+      "uri": "https://zluri.com/blog",
+      "extracted_on": "2025-11-02",
+      "last_seen_on": "2026-04-04",
+      "still_on_page": true
+     }
+    ],
+    "first_name": "Omar",
+    "last_name": "Dummyani",
+    "position": "SDR",
+    "seniority": "junior",
+    "department": "sales",
+    "linkedin": null,
+    "twitter": null,
+    "phone_number": null,
+    "verification": {
+     "date": "2026-04-04",
+     "status": "valid"
+    }
+   }
+  ]
+ },
+ "meta": {
+  "results": 3
+ }
+}

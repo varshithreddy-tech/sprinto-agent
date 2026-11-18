@@ -1,0 +1,26 @@
+TASK: Write TWO distinct, account-specific pain hypotheses for {{name}} ({{title}}) at {{company}}, grounded in the verified facts below, each mapped to exactly one approved Sprinto capability.
+
+APPROVED CAPABILITIES (use the exact name; nothing else — no pricing, guarantees, time savings, certification outcomes):
+{{capabilities}}
+
+RULES
+- observed_fact: what the company's site actually says (cite evidence_ids from the facts list; at least one).
+- hypothesis: tentative wording ("may", "might", "could", "often", "curious whether") — never assert a problem exists.
+- Never invent manual work, lost revenue, time savings, urgency, deadlines, or dissatisfaction with an existing tool.
+- Existing certifications are not a deficiency: frame around ongoing work (renewals, evidence, monitoring, customer reviews), not "you lack compliance".
+- Funding is not budget; enterprise customers do not mean delayed deals.
+- role_relevance: why this person specifically would own or feel this.
+- possible_consequence: a plausible, modest business consequence (no numbers unless in the facts).
+- The two hypotheses must differ in observed fact or capability.
+
+SELF-SCORE each (code re-checks): evidence 0-3 (account-specific supporting evidence), role_relevance 0-2, consequence 0-2, capability_match 0-2, honest_wording 0-1.
+
+Return JSON: {"hypotheses": [{"observed_fact": str, "evidence_ids": [str], "hypothesis": str, "role_relevance": str, "possible_consequence": str, "capability": str, "scores": {"evidence": int, "role_relevance": int, "consequence": int, "capability_match": int, "honest_wording": int}}]}
+
+WHY THE COMPANY QUALIFIED:
+{{qualification}}
+
+VERIFIED FACTS:
+<data>
+{{facts}}
+</data>

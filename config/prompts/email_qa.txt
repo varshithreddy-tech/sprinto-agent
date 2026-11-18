@@ -1,0 +1,27 @@
+TASK: You are a strict QA reviewer. Score this cold email to {{name}} ({{title}}) at {{company}}. Be critical; do not rubber-stamp.
+
+EMAIL
+<data>
+Subject: {{subject}}
+
+{{body}}
+</data>
+
+ALLOWED FACTS (any factual claim about the prospect must be supported here):
+<data>
+{{facts}}
+</data>
+PRIMARY PAIN HYPOTHESIS: {{pain}}
+APPROVED CAPABILITY: {{capability}}
+
+SCORE 0-2 each:
+- specific_hook: verified company fact relevant to the recipient (2), generic/weak (1), none or unverified (0)
+- useful_hypothesis: plausible problem linked to their responsibilities (2), vague (1), none/asserted as fact (0)
+- relevant_value: exactly one supported Sprinto capability tied to the hypothesis (2), loose (1), none/several/invented (0)
+- simple_next_step: one easy, relevant question (2), unclear or multiple asks (1), none or pushy (0)
+- clarity: natural, concise, ~80–120 words (2), somewhat wordy/stiff (1), hard to read (0)
+
+MANDATORY CHECKS (true = passes):
+correct_person_and_company, evidence_for_every_claim, tentative_hypotheses, no_invented_metrics_or_guarantees, no_false_re_or_follow_up, no_unsupported_deficiency, addresses_by_name, one_primary_pain, no_generic_praise_jargon_familiarity
+
+Return JSON: {"scores": {...}, "checks": {...}, "issues": [str], "revision_instructions": str}

@@ -1,0 +1,20 @@
+TASK: Score EVERY Hunter.io contact candidate for {{company}} ({{domain}}) as the recipient of a Sprinto cold email. Sprinto automates compliance certifications (SOC 2, ISO 27001, GDPR): preparation, evidence collection, continuous control monitoring, customer trust documentation.
+
+WHY THE COMPANY QUALIFIED (code-verified):
+{{qualification}}
+
+SCORING (0/1/2 each):
+- company_association: 0 unsupported; 1 provider (Hunter) lists association; 2 recent or first-party confirmation. The field first_party_page tells you whether code found the person's full name on the company's own about/team/leadership pages; Hunter sources with recent last_seen_on dates on the company's own site count as recent confirmation.
+- functional_ownership: 0 unrelated (sales, marketing, support, HR unless compliance-specific); 1 adjacent responsibility (engineering, IT, legal ops, operations); 2 relevant security, compliance, GRC, or technical ownership (CISO, Head of Security/Compliance/GRC, CTO when no security owner exists).
+- ability_to_drive: 0 unclear; 1 contributor (IC, junior, manager without function ownership); 2 leader of the relevant function or initiative.
+- match_to_need: 0 none; 1 plausible; 2 explicit connection between the person's remit and the company's compliance evidence above.
+- identity_quality: 0 missing/conflicting name or title; 1 partially supported; 2 consistent name and title with evidence (Hunter verification + sources).
+
+Never invent people, titles or facts. Judge only the data given. Role preference (applied later by code): 1) Compliance/GRC leader 2) Security leader/CISO 3) CTO/VP Engineering when no suitable security owner 4) technical founder/CEO only in a supported founder-led context.
+
+Return JSON: {"candidates": [{"key": str, "scores": {"company_association": int, "functional_ownership": int, "ability_to_drive": int, "match_to_need": int, "identity_quality": int}, "reasons": {"company_association": str, "functional_ownership": str, "ability_to_drive": str, "match_to_need": str, "identity_quality": str}}]}
+
+CANDIDATES:
+<data>
+{{candidates}}
+</data>

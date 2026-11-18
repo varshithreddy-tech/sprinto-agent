@@ -1,0 +1,117 @@
+{
+ "_note": "FICTIONAL test fixture for --mock-hunter. People below are invented and are not real employees.",
+ "data": {
+  "domain": "rocketlane.com",
+  "organization": "Rocketlane",
+  "pattern": "{first}.{last}",
+  "emails": [
+   {
+    "value": "maya.fixturewala@rocketlane.com",
+    "type": "personal",
+    "confidence": 94,
+    "sources": [
+     {
+      "domain": "rocketlane.com",
+      "uri": "https://rocketlane.com/about",
+      "extracted_on": "2025-11-02",
+      "last_seen_on": "2026-09-14",
+      "still_on_page": true
+     }
+    ],
+    "first_name": "Maya",
+    "last_name": "Fixturewala",
+    "position": "Head of Security & Compliance",
+    "seniority": "executive",
+    "department": "it",
+    "linkedin": null,
+    "twitter": null,
+    "phone_number": null,
+    "verification": {
+     "date": "2026-09-14",
+     "status": "valid"
+    }
+   },
+   {
+    "value": "arun.testpal@rocketlane.com",
+    "type": "personal",
+    "confidence": 91,
+    "sources": [
+     {
+      "domain": "rocketlane.com",
+      "uri": "https://rocketlane.com/blog/eng",
+      "extracted_on": "2025-11-02",
+      "last_seen_on": "2026-08-01",
+      "still_on_page": true
+     }
+    ],
+    "first_name": "Arun",
+    "last_name": "Testpal",
+    "position": "VP Engineering",
+    "seniority": "executive",
+    "department": "engineering",
+    "linkedin": null,
+    "twitter": null,
+    "phone_number": null,
+    "verification": {
+     "date": "2026-08-01",
+     "status": "valid"
+    }
+   },
+   {
+    "value": "kiran.mockraj@rocketlane.com",
+    "type": "personal",
+    "confidence": 88,
+    "sources": [
+     {
+      "domain": "rocketlane.com",
+      "uri": "https://rocketlane.com/blog",
+      "extracted_on": "2025-11-02",
+      "last_seen_on": "2026-07-20",
+      "still_on_page": true
+     }
+    ],
+    "first_name": "Kiran",
+    "last_name": "Mockraj",
+    "position": "Marketing Manager",
+    "seniority": "senior",
+    "department": "marketing",
+    "linkedin": null,
+    "twitter": null,
+    "phone_number": null,
+    "verification": {
+     "date": "2026-07-20",
+     "status": "valid"
+    }
+   },
+   {
+    "value": "devi.sampleson@rocketlane.com",
+    "type": "personal",
+    "confidence": 80,
+    "sources": [
+     {
+      "domain": "rocketlane.com",
+      "uri": "https://rocketlane.com/customers",
+      "extracted_on": "2025-11-02",
+      "last_seen_on": "2026-03-11",
+      "still_on_page": true
+     }
+    ],
+    "first_name": "Devi",
+    "last_name": "Sampleson",
+    "position": "Customer Success Manager",
+    "seniority": "senior",
+    "department": "support",
+    "linkedin": null,
+    "twitter": null,
+    "phone_number": null,
+    "verification": {
+     "date": "2026-03-11",
+     "status": "valid"
+    }
+   }
+  ]
+ },
+ "meta": {
+  "results": 4
+ }
+}

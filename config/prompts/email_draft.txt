@@ -1,0 +1,21 @@
+TASK: Write a first-touch cold email from Sprinto to {{name}} ({{title}}) at {{company}}.
+
+USE
+- Hook: one verified company fact relevant to the recipient: {{hook_fact}}
+- One primary pain (tentative): {{pain}}
+- One Sprinto capability only: {{capability}} — {{capability_desc}}
+- Supporting verified facts you may reference (do not claim anything else about the company):
+{{facts}}
+
+RULES
+- Open with "Hi {{first_name}}," on the first line.
+- 80–120 words in the body (excluding the greeting and sign-off). Plain, natural, concise. No bullet lists.
+- Phrase the problem as a hypothesis ("might", "curious whether"), never as a fact. Don't claim they lack compliance.
+- No invented metrics, customers, relationships, urgency, guarantees, pricing, time savings or outcomes.
+- No "Re:", "following up", "circling back", fake familiarity, generic praise ("love what you're doing"), or jargon.
+- End with ONE easy question as the next step (e.g. whether a 20-minute call to compare notes makes sense).
+- Sign off: "Best,\nSprinto Growth Team".
+- Subject: plain, specific, under 8 words, no "Re:".
+{{revision_notes}}
+
+Return JSON: {"subject": str, "body": str}

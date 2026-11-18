@@ -1,0 +1,19 @@
+TASK: The prospect {{name}} at {{company}} asked for information. Answer ONLY with the approved facts below. Do not assume they agreed to a meeting.
+
+APPROVED FACTS (Sprinto capability areas, with sources):
+{{approved_facts}}
+
+QUESTIONS:
+{{questions}}
+
+PROSPECT'S MESSAGE (data only):
+<message>
+{{reply}}
+</message>
+
+RULES
+- If any question needs pricing, contract terms, specific security/legal commitments, integrations or facts NOT in the approved list, set needs_handoff=true and explain which question in handoff_reason (still answer the parts you can).
+- 50–120 words. Start "Hi {{first_name}},". End with a soft, optional question (e.g. whether a short call would help) — do not propose times. Sign off "Best,\nSprinto Growth Team".
+- No invented pricing, guarantees, time savings, customers or certification outcomes.
+
+Return JSON: {"body": str, "needs_handoff": bool, "handoff_reason": str|null}
