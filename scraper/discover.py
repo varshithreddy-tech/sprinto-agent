@@ -46,7 +46,8 @@ def classify(url: str) -> list[str]:
     if host_label in ("docs", "developer", "developers"):
         types.append("product")
     for q, kws in QUESTION_KEYWORDS.items():
-        if any(k in segs or f"/{k}" in path for k in kws):
+        # whole-word match on URL segments only ("soc" must not match "/socks-for-men")
+        if any(k in segs or re.search(rf"/{re.escape(k)}(?=[/\-_.]|$)", path) for k in kws):
             types.append(q)
     return list(dict.fromkeys(types))
 

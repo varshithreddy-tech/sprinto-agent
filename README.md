@@ -160,7 +160,7 @@ The check is idempotent (escalated threads are no longer waiting). It only touch
 
 ## Deployment (Vercel + Neon)
 
-Live app: **https://sprinto-agent.vercel.app** (login required — the password is `APP_PASSWORD` in your `.env` / Vercel env).
+Live app: **https://sprinto-agent-nu.vercel.app** (`sprinto-agent.vercel.app` was already taken on Vercel) (login required — the password is `APP_PASSWORD` in your `.env` / Vercel env).
 
 How the components map onto the deployment:
 
