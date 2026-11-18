@@ -112,7 +112,7 @@ domains → scraper (robots, httpx → Playwright fallback, discovery, trafilatu
 
 - `outreach/send.py::assert_demo_recipient` raises unless there is exactly one recipient, it equals `DEMO_EMAIL`, and CC/BCC are empty. Every sender class calls it.
 - Prospect emails from Hunter are stored as `email_research_only` and are never passed to a sender.
-- Every send gets an operation ID that is stored *before* sending. Resend also receives it as an idempotency key, so retrying after a timeout cannot create a second email. If the outcome is still unresolved, the status is `SEND_UNCERTAIN`.
+- Every send gets an operation ID that is stored *before* sending, along with the original request. On a timeout, or when resuming a send interrupted by a crash, the agent **first asks Resend whether that exact email already went out** (see below). It only retries if not, always with the same ID as the idempotency key, so a send that did land can't be duplicated. An outcome that still can't be confirmed is `SEND_UNCERTAIN`.
 - Agent-generated message IDs are recorded and ignored by the reply agent, which prevents reply loops. Each processed message ID is stored, so replays are not processed twice.
 - Page text and email text go to Gemini inside `<page>`/`<message>` tags, with a system instruction to treat them as data.
 
@@ -146,3 +146,13 @@ The check is idempotent (escalated threads are no longer waiting). It only touch
 - **Reply agent:** if the write fails, the send or booking still stands. The entries stay in the thread's LangGraph checkpoint (`crm_logged=False`) and are carried forward, never wiped, until they are written.
 - **Pipeline:** logging can never turn a successful send into an error. After 3 failed attempts, an entry goes to `data/activity_spool.jsonl` (gitignored with `data/`).
 - **Retry sweep:** `retry_failed_logging()` writes the spool plus any unlogged thread entries, and never re-runs sends or bookings. It runs in the same places as the deadline check: the dashboard watcher, the end of every batch, and `run.py --check-deadlines` / `--watch`. The **Activity log** page shows what is waiting and has a "Retry failed log writes now" button.
+
+## Send reconciliation (rubric 3.11: "send timeout: reconcile provider state before retrying")
+
+1. **On a timeout,** `send_once` looks the email up in Resend: same recipient and subject, sent after the operation started (with 2 minutes of clock-skew allowance), and **exactly the same text**.
+   - **Found:** it is recorded as SENT with Resend's ID. No retry.
+   - **Not found:** it is retried with the same idempotency key.
+2. **On resume** (an operation left `PENDING` by a crash, or `SEND_UNCERTAIN`), the same lookup runs *before* anything is sent again.
+3. **When the lookup isn't possible,** the agent relies on Resend's idempotency key, which dedupes the same request for 24 hours. A lookup *error* is treated as unknown, never as "not sent". The method used is stored in the operation's `detail`.
+   - **Your current key is send-only** ("This API key is restricted to only send emails"), so it can't look emails up. Create a **Full access** key in Resend and put it in `RESEND_API_KEY` to enable lookups.
+4. **A sweep** runs on the dashboard watcher, `--check-deadlines` and `--watch`. It re-checks `SEND_UNCERTAIN` and stale `PENDING` operations, and marks the ones it finds as SENT. A reconciled first email also updates the company to `EMAIL_SENT` and opens its reply thread. The sweep **never re-sends**: anything not found stays uncertain for a human, and appears under "Sends needing reconciliation" on the Activity log page.

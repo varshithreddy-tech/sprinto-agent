@@ -274,3 +274,12 @@ elif page == "Activity log":
                f"last retry: {LAST_LOG_RETRY['at'] or 'pending'}")
     rows = db.query("SELECT ts, domain, event, detail FROM activity_log ORDER BY id DESC LIMIT 500")
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    st.subheader("Sends needing reconciliation")
+    unc = db.query("SELECT op_id, domain, kind, status, attempts, detail, updated_at FROM operations "
+                   "WHERE status IN ('SEND_UNCERTAIN','PENDING') ORDER BY updated_at DESC")
+    if unc:
+        st.caption("Uncertain sends are looked up at Resend on every sweep and marked SENT if found. "
+                   "They are never re-sent automatically.")
+        st.dataframe(pd.DataFrame(unc), width="stretch", hide_index=True)
+    else:
+        st.caption("None — every send has a confirmed outcome.")

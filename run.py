@@ -34,6 +34,9 @@ def main() -> int:
             if lr["spool_written"] or lr["threads_retried"] or lr["still_pending"]:
                 print(f"activity-log retry: wrote {lr['spool_written']} spooled, retried threads {lr['threads_retried']}, "
                       f"still pending {lr['still_pending']}", flush=True)
+            from pipeline import reconcile_sends
+            for r in reconcile_sends():
+                print(f"send reconcile: {r.get('domain')} {r.get('kind')} -> {r['state']} ({r['method']})", flush=True)
             res = check_deadlines()
             stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"[{stamp}] deadline check: {len(res)} thread(s) escalated", flush=True)

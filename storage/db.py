@@ -68,6 +68,10 @@ MIGRATIONS: list[str] = [
     ALTER TABLE activity_log ADD COLUMN entry_id TEXT;
     CREATE UNIQUE INDEX IF NOT EXISTS ux_activity_entry ON activity_log(entry_id);
     """,
+    # v3: the original send request (sender, to, subject, text) so an uncertain send can be reconciled later
+    """
+    ALTER TABLE operations ADD COLUMN payload TEXT;
+    """,
 ]
 
 

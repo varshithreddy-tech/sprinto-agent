@@ -237,6 +237,41 @@ def _open_thread(domain, company, person, subject, text, op, provider_id, dry_ru
     init_thread(domain, deadline, [mid], delivery="dry-run" if dry_run else "resend")
 
 
+def finalise_reconciled_send(op_row: dict, provider_id: str) -> None:
+    """A SEND_UNCERTAIN initial email was found at the provider: record it as sent and open its reply thread."""
+    if op_row["kind"] != "initial_email":
+        if op_row["kind"].startswith("reply_"):
+            db.execute("UPDATE messages SET provider_id=? WHERE message_id=?", (provider_id, f"agent-{op_row['op_id']}"))
+        return
+    domain = op_row["domain"]
+    rec = db.query_one("SELECT decision_log FROM companies WHERE domain=?", (domain,))
+    log = json.loads(rec["decision_log"]) if rec and rec["decision_log"] else {}
+    person = (log.get("contact") or {}).get("selected")
+    if not person:
+        return
+    dry = op_row["payload"].get("sender") == "dry-run"
+    log["status"] = "DRY_RUN_SENT" if dry else "EMAIL_SENT"
+    log.setdefault("send", {}).update(status=send_mod.SENT, provider_id=provider_id, reconciled=True)
+    log.pop("escalation_reason", None)
+    save_log(domain, log)
+    _open_thread(domain, company_name(log), person, op_row["payload"]["subject"], op_row["payload"]["text"],
+                 op_row["op_id"], provider_id, dry)
+
+
+def sender_for_name(name: str | None):
+    """Sender used by the reconcile sweep (needs RESEND_API_KEY for resend ops)."""
+    if name == "dry-run":
+        return None  # dry-run sends can't be uncertain
+    try:
+        return send_mod.ResendSender()
+    except send_mod.SendAuthError:
+        return None
+
+
+def reconcile_sends() -> list[dict]:
+    return send_mod.reconcile_uncertain(sender_for_name, finalise_reconciled_send)
+
+
 def run_batch(domains: list[str], *, mock_hunter=False, dry_run=False, progress=lambda d, m: None, force=False) -> list[dict]:
     run_id = datetime.now(timezone.utc).strftime("run-%Y%m%dT%H%M%S")
     integrations: dict = {}

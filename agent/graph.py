@@ -438,6 +438,7 @@ def check_deadlines(graph=None, now: datetime | None = None) -> list[dict]:
     return out
 
 
+LAST_RECONCILE: dict = {"at": None, "results": [], "error": None}
 LAST_LOG_RETRY: dict = {"at": None, "spool_written": 0, "threads_retried": [], "still_pending": 0}
 
 
@@ -486,6 +487,11 @@ def start_deadline_watcher(interval_minutes: float | None = None) -> threading.T
                 retry_failed_logging()
             except Exception:
                 pass
+            try:
+                from pipeline import reconcile_sends
+                LAST_RECONCILE.update(at=datetime.now(timezone.utc).isoformat(), results=reconcile_sends())
+            except Exception as e:
+                LAST_RECONCILE.update(at=datetime.now(timezone.utc).isoformat(), error=str(e))
             try:
                 check_deadlines()
             except Exception as e:  # never let the watcher die
