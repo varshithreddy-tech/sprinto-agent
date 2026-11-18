@@ -25,6 +25,15 @@ def jl(s):
         return {}
 
 
+@st.cache_resource
+def _deadline_watcher():
+    """One background thread per dashboard process: checks no-reply deadlines every DEADLINE_CHECK_MINUTES."""
+    from agent.graph import start_deadline_watcher
+    return start_deadline_watcher()
+
+
+_deadline_watcher()
+
 page = st.sidebar.radio("Page", ["Run", "Companies", "Threads", "Calendar", "Activity log"])
 st.sidebar.caption(f"Rubric {S.RUBRIC_VERSION} · model {S.GEMINI_MODEL}")
 st.sidebar.caption(f"All email goes to DEMO_EMAIL only: {S.DEMO_EMAIL or '(not set)'}")
@@ -38,9 +47,12 @@ if page == "Run":
     default = open(S.ROOT / "domains.txt", encoding="utf-8").read() if (S.ROOT / "domains.txt").exists() else ""
     domains_txt = st.text_area("Domains (one per line, # comments allowed)", default, height=220)
     c1, c2, c3 = st.columns(3)
-    mock = c1.toggle("Mock Hunter (fixtures)", value=not S.HUNTER_API_KEY)
-    dry = c2.toggle("Dry run (no real send)", value=not (S.RESEND_API_KEY and S.DEMO_EMAIL))
+    # Safe defaults: a real Hunter lookup or real email needs a deliberate switch-off.
+    mock = c1.toggle("Mock Hunter (fixtures)", value=True, help="Off = live Hunter lookups (uses credits)")
+    dry = c2.toggle("Dry run (no real send)", value=True, help="Off = real emails to DEMO_EMAIL via Resend")
     force = c3.toggle("Re-process already-sent domains", value=False)
+    if not (mock and dry):
+        st.warning("LIVE mode: " + ", ".join(x for x, on in [("real Hunter lookups", not mock), ("real emails to DEMO_EMAIL", not dry)] if on))
     if st.button("Run", type="primary"):
         need = S.missing_keys("GEMINI_API_KEY") + ([] if mock else S.missing_keys("HUNTER_API_KEY")) + \
             ([] if dry else S.missing_keys("RESEND_API_KEY", "DEMO_EMAIL"))
@@ -72,7 +84,7 @@ elif page == "Companies":
     if not rows:
         st.info("No companies yet — run the pipeline first.")
         st.stop()
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
     dom = st.selectbox("Open decision log", [r["domain"] for r in rows])
     rec = db.query_one("SELECT * FROM companies WHERE domain=?", (dom,))
     log = jl(rec["decision_log"])
@@ -90,7 +102,7 @@ elif page == "Companies":
         st.dataframe(pd.DataFrame([{"dimension": n, "weight": d["weight"], "level": d["level"], "LLM level": d["llm_level"],
                                     "points": d["points"], "zero reason": d["zero_reason"], "evidence": ", ".join(d["evidence_ids"]),
                                     "reason": d["reason"], "code adjustments": "; ".join(d["adjustments"])}
-                                   for n, d in q["dimensions"].items()]), use_container_width=True, hide_index=True)
+                                   for n, d in q["dimensions"].items()]), width="stretch", hide_index=True)
         st.write("**Flags:**", q.get("flags"))
 
     st.subheader("Research rounds (gap → source → new evidence → decision)")
@@ -98,7 +110,7 @@ elif page == "Companies":
         with st.expander(f"Round {r['round']}: {r.get('decision')} {'· total ' + str(r.get('total')) if r.get('total') is not None else ''}"):
             st.write("**Evidence gap:**", r.get("evidence_gap"))
             st.write("**Selected sources:**")
-            st.dataframe(pd.DataFrame(r.get("selected_sources", [])), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(r.get("selected_sources", [])), width="stretch", hide_index=True)
             st.write("**New evidence:**", ", ".join(r.get("new_evidence", [])) or "none")
             if r.get("reasons"):
                 st.write("**Decision reasons:**", "; ".join(r["reasons"]))
@@ -110,10 +122,10 @@ elif page == "Companies":
                                     "verified": f["verified"], "source": f["source_url"], "exact excerpt": f["exact_excerpt"],
                                     "retrieved": f.get("retrieval_date"), "published": f.get("publication_date"),
                                     "note": f.get("verification_note")} for f in facts]),
-                     use_container_width=True, hide_index=True,
+                     width="stretch", hide_index=True,
                      column_config={"source": st.column_config.LinkColumn("source")})
     with st.expander(f"Pages ({len(log.get('pages', []))})"):
-        st.dataframe(pd.DataFrame(log.get("pages", [])), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(log.get("pages", [])), width="stretch", hide_index=True)
 
     c = log.get("contact")
     if c:
@@ -123,7 +135,7 @@ elif page == "Companies":
                                     "role category": x["role_category"], **x["scores"], "total": x["total"], "passed": x["passed"],
                                     "first-party page": x.get("first_party_page"), "adjustments": "; ".join(x.get("adjustments", [])),
                                     "reasons": " | ".join(f"{k}: {v}" for k, v in x["reasons"].items())}
-                                   for x in c["candidates"]]), use_container_width=True, hide_index=True)
+                                   for x in c["candidates"]]), width="stretch", hide_index=True)
     pains = log.get("pains")
     if pains:
         st.subheader(f"Pain hypotheses — {pains['status']}")
@@ -155,8 +167,14 @@ elif page == "Threads":
     from agent.graph import check_deadlines, get_state, process_inbound
     st.title("Threads")
     threads = db.query("SELECT * FROM threads ORDER BY created_at DESC")
-    if st.button("Check no-reply deadlines"):
+    from agent.graph import LAST_DEADLINE_CHECK
+    c1, c2 = st.columns([1, 3])
+    if c1.button("Check no-reply deadlines now"):
         st.write(check_deadlines() or "No thread passed its deadline.")
+    last = LAST_DEADLINE_CHECK
+    c2.caption(f"Auto-check every {S.DEADLINE_CHECK_MINUTES:g} min while the dashboard runs · last check: "
+               f"{last['at'] or 'pending'} · escalated last time: {len(last['escalated'])}"
+               + (f" · error: {last['error']}" if last.get("error") else ""))
     if not threads:
         st.info("No sent emails yet.")
         st.stop()
@@ -188,6 +206,12 @@ elif page == "Threads":
         if stt:
             from agent.calendar_provider import fmt_slot
             st.metric("reply_status", stt.get("reply_status"))
+            dl = stt.get("reply_deadline")
+            if dl and stt.get("reply_status") in ("AWAITING_REPLY", "TIMES_PROPOSED", "INFO_SENT", "CLARIFICATION_REQUESTED", "OUT_OF_OFFICE"):
+                left = datetime.fromisoformat(dl) - datetime.now(timezone.utc)
+                hrs = left.total_seconds() / 3600
+                st.caption(f"No-reply deadline: {datetime.fromisoformat(dl).astimezone(IST):%a %d %b %H:%M} IST · "
+                           + (f"{hrs:.1f} h left" if hrs > 0 else "passed — escalates on the next check"))
             st.write({k: stt.get(k) for k in ["reply_round", "meeting_status", "event_id", "confirmed_slot", "requested_slot",
                                                "prospect_tz", "organizer_tz", "calendar_checked", "checked_at", "suppressed",
                                                "escalation_reason", "reply_deadline", "crm_logged", "retry_counts", "referral"]})
@@ -227,7 +251,7 @@ elif page == "Calendar":
         if v.startswith("■"):
             return "background-color: #9e9e9e; color: white"
         return ""
-    st.dataframe(df.style.map(color), use_container_width=True, height=720)
+    st.dataframe(df.style.map(color), width="stretch", height=720)
     st.caption("■ busy block (seeded) · 📅 booked meeting. Weekdays 09:00–18:00 IST, 30-minute slots, 30-day horizon.")
     meetings = [e for e in db.query("SELECT * FROM calendar_events WHERE kind='meeting' ORDER BY start_utc")]
     if meetings:
@@ -240,4 +264,4 @@ elif page == "Calendar":
 elif page == "Activity log":
     st.title("DEMO ACTIVITY LOG — not a real CRM")
     rows = db.query("SELECT ts, domain, event, detail FROM activity_log ORDER BY id DESC LIMIT 500")
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)

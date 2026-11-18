@@ -146,8 +146,8 @@ def test_agent_messages_and_duplicates_ignored(env):
 def test_no_reply_deadline_escalates(env):
     from agent.graph import check_deadlines
     tid = env.open_thread()
-    assert check_deadlines(graph=env.graph) == []           # before deadline
+    assert check_deadlines(graph=env.graph, now=env.now) == []           # before deadline
     env.now = env.now + timedelta(hours=49)
     env.graph = env.new_graph()
-    res = check_deadlines(graph=env.graph)
+    res = check_deadlines(graph=env.graph, now=env.now)
     assert res and res[0]["status"] == st.ESCALATED and "No reply" in res[0]["reason"]

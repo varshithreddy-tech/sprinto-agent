@@ -32,6 +32,7 @@ copy .env.example .env               # then fill it in
 | `DEMO_EMAIL` | **the email address of your Resend account**. Free Resend (no verified domain) sends from `onboarding@resend.dev` only to this address |
 | `ORGANIZER_TZ` | `Asia/Kolkata` |
 | `REPLY_DEADLINE_HOURS` | `48` |
+| `DEADLINE_CHECK_MINUTES` | `10`: how often the dashboard / `--watch` checks for overdue threads |
 
 ## How to run
 
@@ -42,8 +43,9 @@ python run.py --domains domains.txt --dry-run --mock-hunter
 # Live: real Hunter + real Resend send to DEMO_EMAIL
 python run.py --domains domains.txt
 
-# Escalate threads whose 48h no-reply deadline passed
+# No-reply deadline (48h): escalate overdue threads once, or keep watching
 python run.py --check-deadlines
+python run.py --watch            # every DEADLINE_CHECK_MINUTES (default 10); --watch 5 for every 5 min
 
 # Dashboard
 streamlit run app.py
@@ -56,7 +58,7 @@ Domains already sent are skipped on re-run (resume after a restart). Add `--forc
 
 ## How to demo
 
-1. **Run** page: paste domains, choose Mock Hunter and Dry run as needed, then click **Run**. Progress updates live for each domain.
+1. **Run** page: paste domains and click **Run**. Mock Hunter and Dry run are **on by default**; switching either off shows a LIVE warning (real Hunter credits / real emails). Progress updates live for each domain.
 2. **Companies** page: open any row to see its full decision log:
    - evidence table with source links and exact quotes;
    - the 5 dimension levels, LLM level vs code-adjusted level, and points;
@@ -127,3 +129,13 @@ domains → scraper (robots, httpx → Playwright fallback, discovery, trafilatu
 9. **Splash/storefront pages:** the page `<title>` and meta description are always kept. If dropping short blocks would leave a page under 30 words, the short blocks are kept instead. Without this, bewakoof.com's homepage cleaned to nothing and showed up as a retrieval failure instead of a clear non-SaaS business.
 10. **Blocked competitor sites:** drata.com serves a bot challenge (never bypassed). When a homepage can't be retrieved *and* the domain is on the configured competitor list (`COMPETITOR_DOMAINS`, from the rubric's examples), it is routed to `DISQUALIFIED`, and the log states there was no web evidence. Any other blocked domain stays `RETRIEVAL_FAILED`, not poor fit.
 11. **Staging/dev subdomains** (`stage.`, `dev.`, `qa.` …) found in sitemaps are excluded from discovery.
+
+## No-reply deadline automation
+
+A thread waiting on the prospect is escalated when its deadline passes. Waiting statuses are `AWAITING_REPLY`, `TIMES_PROPOSED`, `INFO_SENT`, `CLARIFICATION_REQUESTED` and `OUT_OF_OFFICE`. Escalation pauses only that prospect. The deadline resets to 48h after every agent message, and a booked meeting never times out. The check runs automatically in three places:
+
+- **Dashboard:** a background thread checks every `DEADLINE_CHECK_MINUTES` while `streamlit run app.py` is open. The Threads page shows the last check and each thread's time left.
+- **Every batch run:** the sweep runs after the last domain.
+- **`python run.py --watch`:** a headless loop, e.g. in a terminal you leave open.
+
+The check is idempotent (escalated threads are no longer waiting). It only touches threads that are actually due, and one thread's failure doesn't stop the others. To run it even when nothing is open, `scripts/schedule_deadline_check.ps1` registers an hourly Windows Task Scheduler job. It is **not** registered automatically; run it yourself, and remove it with `-Remove`.

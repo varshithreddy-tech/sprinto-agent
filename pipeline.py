@@ -258,4 +258,10 @@ def run_batch(domains: list[str], *, mock_hunter=False, dry_run=False, progress=
             save_log(d, log)
             out.append(log)
         progress(d, f"done: {out[-1].get('status')}")
+    try:  # every batch run also sweeps existing threads for passed no-reply deadlines
+        from agent.graph import check_deadlines
+        for r in check_deadlines():
+            progress(r["thread"], f"no-reply deadline passed -> {r['status']}: {r['reason']}")
+    except Exception as e:
+        progress("deadline-check", f"failed: {type(e).__name__}: {e}")
     return out

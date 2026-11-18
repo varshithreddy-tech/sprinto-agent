@@ -17,6 +17,9 @@ DELIVERY_NOTICE = "DELIVERY_NOTICE"
 BOOKING_UNCERTAIN = "BOOKING_UNCERTAIN"
 
 STOPPED = {REJECTED, OPTED_OUT, ESCALATED, BOOKING_UNCERTAIN}
+# Statuses where the agent is waiting on the prospect, so the no-reply deadline applies.
+# MEETING_BOOKED is not waiting: a booked meeting needs no reply.
+WAITING = {AWAITING_REPLY, TIMES_PROPOSED, INFO_SENT, CLARIFICATION_REQUESTED, OUT_OF_OFFICE}
 
 
 class ThreadState(TypedDict, total=False):

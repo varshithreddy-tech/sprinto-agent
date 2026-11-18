@@ -69,6 +69,8 @@ class Env:
         monkeypatch.setattr(S, "DEMO_EMAIL", DEMO)
         monkeypatch.setattr(S, "DB_PATH", self.path)
         monkeypatch.setattr(S, "DECISION_LOG_DIR", tmp_path / "decision_logs")
+        import agent.graph as ag
+        ag.set_graph(None)  # never reuse a graph bound to another test's database
         self.conn = db.connect(self.path)
         db.set_db(self.conn)
         self.cal = cp.DemoCalendar(self.conn)
@@ -99,6 +101,8 @@ class Env:
         return process_inbound(tid, text, graph=self.graph, message_id=mid)
 
     def close(self):
+        import agent.graph as ag
+        ag.set_graph(None)
         db.set_db(None)
         cp.set_calendar(None)
         llm.set_llm(None)

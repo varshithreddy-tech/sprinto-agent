@@ -27,6 +27,7 @@ RESEND_FROM = os.getenv("RESEND_FROM", "Sprinto Outbound Demo <onboarding@resend
 ORGANIZER_TZ = os.getenv("ORGANIZER_TZ", "Asia/Kolkata")
 ORGANIZER_NAME = os.getenv("ORGANIZER_NAME", "Sprinto Growth Team")
 REPLY_DEADLINE_HOURS = int(os.getenv("REPLY_DEADLINE_HOURS", "48"))
+DEADLINE_CHECK_MINUTES = float(os.getenv("DEADLINE_CHECK_MINUTES", "10"))
 
 RUBRIC_VERSION = (CONFIG_DIR / "rubric_version.txt").read_text().strip()
 

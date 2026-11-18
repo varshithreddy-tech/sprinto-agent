@@ -6,6 +6,7 @@ messages are ignored by stored message IDs to prevent reply loops.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
@@ -53,9 +54,9 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
                     "pending_log": [{"event": "THREAD_OPENED", "detail": {"reply_deadline": msg["deadline"]}}]}
         if msg.get("type") == "deadline_tick":
             dl = state.get("reply_deadline")
-            waiting = state.get("reply_status") in (st.AWAITING_REPLY, st.TIMES_PROPOSED, st.INFO_SENT,
-                                                     st.CLARIFICATION_REQUESTED, st.OUT_OF_OFFICE)
-            if waiting and dl and now() > datetime.fromisoformat(dl) and not state.get("suppressed"):
+            waiting = state.get("reply_status") in st.WAITING
+            at = datetime.fromisoformat(msg["now"]) if msg.get("now") else now()  # checker's clock wins
+            if waiting and dl and at > datetime.fromisoformat(dl) and not state.get("suppressed"):
                 return {**base, "skip_reason": None, "classification": {"category": "no_reply"}}
             return {**base, "skip_reason": "deadline not reached or thread not waiting"}
         mid = msg.get("message_id")
@@ -249,8 +250,9 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
             if res["status"] not in (send_mod.SENT, send_mod.DUPLICATE):
                 upd["escalation_reason"] = f"SEND_UNCERTAIN for {item['kind']}: {res.get('error')}"
                 upd["reply_status"] = st.ESCALATED
-        upd.update({"agent_message_ids": agent_ids, "outbox": [], "pending_log": logs,
-                    "reply_deadline": (now() + timedelta(hours=S.REPLY_DEADLINE_HOURS)).replace(microsecond=0).isoformat()})
+        deadline = (now() + timedelta(hours=S.REPLY_DEADLINE_HOURS)).replace(microsecond=0).isoformat()
+        db.execute("UPDATE threads SET reply_deadline=? WHERE thread_id=?", (deadline, state["thread_id"]))
+        upd.update({"agent_message_ids": agent_ids, "outbox": [], "pending_log": logs, "reply_deadline": deadline})
         return upd
 
     def update_activity_log(state: st.ThreadState) -> dict:
@@ -392,13 +394,52 @@ def process_inbound(thread_id: str, body: str, simulated: bool = True, author: s
     return (graph or get_graph()).invoke({"incoming": {"message_id": mid, "body": body, "author": author}}, _cfg(thread_id))
 
 
-def check_deadlines(graph=None) -> list[dict]:
-    out = []
-    for t in db.query("SELECT thread_id FROM threads"):
-        before = get_state(t["thread_id"], graph)
-        if not before:
-            continue
-        after = (graph or get_graph()).invoke({"incoming": {"type": "deadline_tick"}}, _cfg(t["thread_id"]))
-        if after.get("reply_status") != before.get("reply_status"):
-            out.append({"thread": t["thread_id"], "status": after.get("reply_status"), "reason": after.get("escalation_reason")})
+LAST_DEADLINE_CHECK: dict = {"at": None, "escalated": [], "error": None}
+
+
+def due_threads(now: datetime, graph=None) -> list[str]:
+    """Threads waiting on the prospect whose no-reply deadline has passed. Read-only."""
+    due = []
+    for t in db.query("SELECT thread_id FROM threads ORDER BY thread_id"):
+        s = get_state(t["thread_id"], graph)
+        dl = s.get("reply_deadline") if s else None
+        if (s and s.get("reply_status") in st.WAITING and not s.get("suppressed") and dl
+                and now > datetime.fromisoformat(dl)):
+            due.append(t["thread_id"])
+    return due
+
+
+def check_deadlines(graph=None, now: datetime | None = None) -> list[dict]:
+    """Escalate (pause) every thread past its no-reply deadline. Idempotent: an escalated thread is no
+    longer 'waiting', so re-running does nothing. Only due threads are invoked, so routine checks add
+    no checkpoints. One thread's failure doesn't stop the others."""
+    now = now or datetime.now(timezone.utc)
+    out, errors = [], []
+    for tid in due_threads(now, graph):
+        try:
+            after = (graph or get_graph()).invoke({"incoming": {"type": "deadline_tick", "now": now.isoformat()}}, _cfg(tid))
+            out.append({"thread": tid, "status": after.get("reply_status"), "reason": after.get("escalation_reason")})
+        except Exception as e:  # keep going for other threads
+            errors.append(f"{tid}: {type(e).__name__}: {e}")
+            db.log_activity(tid, "DEADLINE_CHECK_FAILED", str(e))
+    LAST_DEADLINE_CHECK.update(at=now.isoformat(), escalated=out, error="; ".join(errors) or None)
     return out
+
+
+def start_deadline_watcher(interval_minutes: float | None = None) -> threading.Thread:
+    """Background thread that runs check_deadlines every N minutes for as long as the process lives
+    (used by the dashboard and `run.py --watch`)."""
+    interval = 60 * (interval_minutes if interval_minutes is not None else S.DEADLINE_CHECK_MINUTES)
+    stop = threading.Event()
+
+    def loop():
+        while not stop.is_set():
+            try:
+                check_deadlines()
+            except Exception as e:  # never let the watcher die
+                LAST_DEADLINE_CHECK.update(at=datetime.now(timezone.utc).isoformat(), error=str(e))
+            stop.wait(interval)
+    t = threading.Thread(target=loop, name="deadline-watcher", daemon=True)
+    t.stop_event = stop  # set() to stop the watcher
+    t.start()
+    return t

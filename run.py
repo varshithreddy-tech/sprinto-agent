@@ -1,5 +1,6 @@
 """CLI: python run.py --domains domains.txt [--mock-hunter] [--dry-run] [--force]
-          python run.py --check-deadlines      (escalate threads past their no-reply deadline)
+          python run.py --check-deadlines      (escalate threads past their no-reply deadline, once)
+          python run.py --watch [MINUTES]      (keep checking deadlines every N minutes; Ctrl+C to stop)
 """
 from __future__ import annotations
 
@@ -16,16 +17,30 @@ def main() -> int:
     ap.add_argument("--mock-hunter", action="store_true", help="read tests/fixtures/hunter/<domain>.json instead of Hunter")
     ap.add_argument("--dry-run", action="store_true", help="do everything except the real Resend send")
     ap.add_argument("--force", action="store_true", help="re-process domains that were already sent")
-    ap.add_argument("--check-deadlines", action="store_true")
+    ap.add_argument("--check-deadlines", action="store_true", help="escalate threads past the no-reply deadline, once")
+    ap.add_argument("--watch", nargs="?", const=-1.0, type=float, metavar="MINUTES",
+                    help="check no-reply deadlines every N minutes until stopped (default DEADLINE_CHECK_MINUTES)")
     a = ap.parse_args()
 
     from config import settings as S
 
-    if a.check_deadlines:
+    if a.check_deadlines or a.watch is not None:
+        import time
+        from datetime import datetime
         from agent.graph import check_deadlines
-        for r in check_deadlines():
-            print(r)
-        return 0
+        minutes = S.DEADLINE_CHECK_MINUTES if (a.watch is None or a.watch < 0) else a.watch
+        while True:
+            res = check_deadlines()
+            stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{stamp}] deadline check: {len(res)} thread(s) escalated", flush=True)
+            for r in res:
+                print(f"   {r['thread']}: {r['status']} — {r['reason']}", flush=True)
+            if a.watch is None:
+                return 0
+            try:
+                time.sleep(minutes * 60)
+            except KeyboardInterrupt:
+                return 0
     if not a.domains:
         ap.error("--domains is required")
     missing = S.missing_keys("GEMINI_API_KEY")
