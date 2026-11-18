@@ -116,3 +116,12 @@ def test_batch_run_sweeps_deadlines(env, monkeypatch):
         "domain": d, "status": "LOW_PRIORITY", "facts": [], "qualification": {"total": 40}, "rounds": [], "pages": []})
     pipeline.run_batch(["x.io"])
     assert calls == [1]
+
+
+def test_question_after_booking_keeps_meeting_and_never_times_out(env):
+    tid = env.open_thread()
+    env.reply(tid, "interested")
+    env.reply(tid, "Option 1 works")
+    s = env.reply(tid, "How does evidence collection work?")
+    assert s["reply_status"] == st.MEETING_BOOKED and s["meeting_status"] == "CONFIRMED"
+    assert check(env, 200) == []

@@ -60,7 +60,7 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
             return {**base, "skip_reason": "retrying failed activity-log writes" if carried else "nothing to retry"}
         if msg.get("type") == "deadline_tick":
             dl = state.get("reply_deadline")
-            waiting = state.get("reply_status") in st.WAITING
+            waiting = state.get("reply_status") in st.WAITING and state.get("meeting_status") not in st.BOOKED_MEETING
             at = datetime.fromisoformat(msg["now"]) if msg.get("now") else now()  # checker's clock wins
             if waiting and dl and at > datetime.fromisoformat(dl) and not state.get("suppressed"):
                 return {**base, "skip_reason": None, "classification": {"category": "no_reply"}}
@@ -129,7 +129,9 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
         ans = T.answer_info_request(Classification(**state["classification"]), _thread(state["thread_id"]), state["incoming"]["body"])
         if ans.needs_handoff:
             return {"escalation_reason": f"Info request needs a human: {ans.handoff_reason}"}
-        return {"outbox": [*state.get("outbox", []), {"kind": "info", "body": ans.body}], "reply_status": st.INFO_SENT,
+        # A question after booking doesn't un-book the meeting or restart the no-reply clock.
+        status = st.MEETING_BOOKED if state.get("meeting_status") in st.BOOKED_MEETING else st.INFO_SENT
+        return {"outbox": [*state.get("outbox", []), {"kind": "info", "body": ans.body}], "reply_status": status,
                 "pending_log": log_entry(state, "INFO_ANSWERED", {"questions": state["classification"].get("questions")})}
 
     def resolve_confirmation(state: st.ThreadState) -> dict:
@@ -431,6 +433,7 @@ def due_threads(now: datetime, graph=None) -> list[str]:
         s = get_state(t["thread_id"], graph)
         dl = s.get("reply_deadline") if s else None
         if (s and s.get("reply_status") in st.WAITING and not s.get("suppressed") and dl
+                and s.get("meeting_status") not in st.BOOKED_MEETING
                 and now > datetime.fromisoformat(dl)):
             due.append(t["thread_id"])
     return due
