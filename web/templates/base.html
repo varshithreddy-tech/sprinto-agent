@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Sprinto Outbound Agent{% endblock %} · demo</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --ink:#1d1d1b; --muted:#6b6b66; --line:#e3e2dc; --accent:#3b5bdb;
+          --ok:#2b8a3e; --warn:#b7791f; --bad:#c92a2a; --busy:#9e9e9e; --meet:#2e7d32; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#151514; --card:#1f1f1d; --ink:#ecebe6; --muted:#a3a29b;
+          --line:#33332f; --accent:#7c95ff; } }
+  * { box-sizing:border-box } body { margin:0; font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+          background:var(--bg); color:var(--ink) }
+  header { display:flex; flex-wrap:wrap; gap:6px 18px; align-items:center; padding:12px 20px; border-bottom:1px solid var(--line);
+          background:var(--card); position:sticky; top:0; z-index:5 }
+  header .brand { font-weight:700 } header nav a { color:var(--muted); text-decoration:none; padding:4px 8px; border-radius:6px }
+  header nav a.on, header nav a:hover { color:var(--ink); background:var(--bg) }
+  header .meta { margin-left:auto; color:var(--muted); font-size:12px }
+  main { max-width:1200px; margin:0 auto; padding:20px 16px 60px }
+  h1 { font-size:22px; margin:6px 0 14px } h2 { font-size:17px; margin:26px 0 10px } h3 { font-size:15px; margin:16px 0 6px }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin:12px 0 }
+  .muted { color:var(--muted) } .small { font-size:12.5px }
+  table { width:100%; border-collapse:collapse; background:var(--card); font-size:13.5px }
+  th, td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--line); vertical-align:top }
+  th { font-weight:600; color:var(--muted); white-space:nowrap } .scroll { overflow-x:auto; border:1px solid var(--line); border-radius:10px }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; font-weight:600; background:var(--bg); border:1px solid var(--line) }
+  .ok { color:var(--ok) } .warn { color:var(--warn) } .bad { color:var(--bad) }
+  a { color:var(--accent) } pre, .mail { white-space:pre-wrap; font:13px/1.5 ui-monospace, Consolas, monospace; margin:0 }
+  textarea, input[type=password], input[type=text] { width:100%; font:inherit; padding:8px; border-radius:8px; border:1px solid var(--line);
+          background:var(--bg); color:var(--ink) }
+  button { font:inherit; font-weight:600; padding:8px 14px; border-radius:8px; border:0; background:var(--accent); color:#fff; cursor:pointer }
+  button.secondary { background:var(--bg); color:var(--ink); border:1px solid var(--line) } button[disabled] { opacity:.6; cursor:wait }
+  .banner { padding:10px 14px; border-radius:8px; margin:10px 0; border:1px solid var(--line) }
+  .banner.warn { background:color-mix(in srgb, var(--warn) 12%, var(--card)) } .banner.ok { background:color-mix(in srgb, var(--ok) 12%, var(--card)) }
+  .banner.bad { background:color-mix(in srgb, var(--bad) 12%, var(--card)) }
+  .grid2 { display:grid; grid-template-columns: minmax(0,3fr) minmax(0,2fr); gap:16px } @media (max-width:860px){ .grid2 { grid-template-columns:1fr } }
+  details summary { cursor:pointer; font-weight:600 } .kv td:first-child { color:var(--muted); width:38% }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">Sprinto outbound agent <span class="pill">DEMO</span></span>
+  <nav>
+    <a href="/run" class="{{ 'on' if nav=='run' }}">Run</a>
+    <a href="/" class="{{ 'on' if nav=='companies' }}">Companies</a>
+    <a href="/threads" class="{{ 'on' if nav=='threads' }}">Threads</a>
+    <a href="/calendar" class="{{ 'on' if nav=='calendar' }}">Calendar</a>
+    <a href="/activity" class="{{ 'on' if nav=='activity' }}">Activity log</a>
+  </nav>
+  <span class="meta">Rubric {{ rubric }} · {{ model }} · all email goes to DEMO_EMAIL only · <a href="/logout">Log out</a></span>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+<script>
+  // Disable submit buttons while a request runs (the reply agent can take ~30s).
+  document.querySelectorAll('form').forEach(f => f.addEventListener('submit', () => {
+    f.querySelectorAll('button[type=submit]').forEach(b => { b.disabled = true; b.dataset.label && (b.textContent = b.dataset.label); });
+  }));
+  // Background upkeep (log retry, send reconciliation, no-reply deadlines) — throttled server-side.
+  fetch('/tasks/maintenance', {method: 'POST', headers: {'accept': 'application/json'}}).catch(() => {});
+</script>
+</body>
+</html>

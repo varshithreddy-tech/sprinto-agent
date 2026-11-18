@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Activity log{% endblock %}
+{% block content %}
+<h1>DEMO ACTIVITY LOG — not a real CRM</h1>
+{% if ran %}<div class="banner ok">Maintenance ran.</div>{% endif %}
+<div class="card small">
+  <form method="post" action="/tasks/maintenance?force=1" style="float:right"><button type="submit" class="secondary" data-label="Running…">Run maintenance now</button></form>
+  <b>Maintenance</b> (retry failed log writes · reconcile uncertain sends · escalate threads past the no-reply deadline) runs automatically
+  on page visits at most every {{ '%g'|format(10) }} min, daily via Vercel Cron, and on the research worker.<br>
+  Last run: {{ last.at|ist if last else 'never' }}{% if last %} ·
+  deadlines escalated: {{ (last.deadlines|length) if last.deadlines is iterable and last.deadlines is not mapping else last.deadlines }} ·
+  sends reconciled: {{ (last.reconcile|length) if last.reconcile is iterable and last.reconcile is not mapping else last.reconcile }}{% endif %}<br>
+  Waiting to be written: {{ spooled }} spooled entries · threads with unlogged entries: {{ unlogged|join(', ') or 'none' }}
+</div>
+<h2>Sends needing reconciliation</h2>
+{% if unc %}
+<p class="small muted">Looked up at Resend on every maintenance run and marked SENT if found. Never re-sent automatically.</p>
+<div class="scroll"><table><tr><th>Op</th><th>Domain</th><th>Kind</th><th>Status</th><th>Attempts</th><th>Detail</th><th>Updated</th></tr>
+{% for u in unc %}<tr><td class="small">{{ u.op_id[:12] }}</td><td>{{ u.domain }}</td><td>{{ u.kind }}</td><td>{{ u.status }}</td><td>{{ u.attempts }}</td><td class="small">{{ u.detail }}</td><td class="small">{{ u.updated_at|ist('%d %b %H:%M') }}</td></tr>{% endfor %}
+</table></div>
+{% else %}<p class="small muted">None — every send has a confirmed outcome.</p>{% endif %}
+<h2>Log</h2>
+<div class="scroll"><table><tr><th>Time</th><th>Domain</th><th>Event</th><th>Detail</th></tr>
+{% for r in rows %}<tr><td class="small muted" style="white-space:nowrap">{{ r.ts|ist('%d %b %H:%M:%S') }}</td><td>{{ r.domain }}</td><td>{{ r.event }}</td><td class="small">{{ (r.detail or '')[:300] }}</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

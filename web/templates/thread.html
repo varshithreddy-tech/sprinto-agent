@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ t.company }} thread{% endblock %}
+{% block content %}
+<p class="small"><a href="/threads">← Threads</a></p>
+<h1>{{ t.subject }}</h1>
+<p class="muted small">{{ t.company }} · intended for {{ t.contact_name }}, {{ t.contact_title }} · delivered to DEMO_EMAIL only ({{ s.delivery or '' }})</p>
+{% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
+<div class="grid2">
+<section>
+  {% for m in msgs %}
+  <div class="card" {% if loop.last %}id="latest"{% endif %} style="{{ 'border-left:4px solid var(--accent)' if m.direction=='inbound' else '' }}">
+    <div class="small muted">{{ 'Prospect (simulated)' if m.direction=='inbound' else 'Agent → DEMO_EMAIL' }} · {{ m.created_at|ist('%d %b %H:%M:%S') }}{% if m.provider_id %} · provider id {{ m.provider_id }}{% endif %}</div>
+    <div class="mail">{{ m.body }}</div>
+  </div>
+  {% endfor %}
+  <h2>DEMO — simulated prospect replies</h2>
+  <p class="small muted">Resend's free tier can't receive mail. Type a reply as the prospect: it's stored as an inbound message on this thread and the reply agent processes it live (Gemini classifies it, the calendar is checked, replies go to DEMO_EMAIL via Resend).</p>
+  <form method="post" action="/threads/{{ t.thread_id }}/reply" class="card">
+    <textarea name="body" rows="4" placeholder="e.g. Interested — happy to talk next week." required></textarea>
+    <p><button type="submit" data-label="Reply agent working… (up to ~30s)">Send as prospect</button></p>
+    <p class="small muted">Try: “Interested, happy to chat next week” · “Option 2 works” · “Something came up, can we move it to Thursday afternoon?” · “What’s the pricing?” · “Please unsubscribe me”.</p>
+  </form>
+</section>
+<aside>
+  <div class="card">
+    <h3>Agent state <span class="muted small">(LangGraph checkpoint)</span></h3>
+    <p style="font-size:20px;margin:4px 0"><b>{{ s.reply_status or '—' }}</b></p>
+    {% if left is not none %}<p class="small {{ 'bad' if left <= 0 else 'muted' }}">No-reply deadline {{ s.reply_deadline|ist('%a %d %b %H:%M') }} · {{ ('%.1f h left'|format(left)) if left > 0 else 'passed — escalates on the next check' }}</p>{% endif %}
+    <table class="kv">
+      {% for k in ['meeting_status','confirmed_slot','event_id','event_sequence','reply_round','prospect_tz','organizer_tz','calendar_checked','checked_at','suppressed','escalation_reason','crm_logged','referral'] %}
+      <tr><td>{{ k }}</td><td class="small">{{ confirmed if k=='confirmed_slot' and confirmed else s.get(k) }}</td></tr>
+      {% endfor %}
+    </table>
+    <h3>Latest offered slots</h3>
+    {% if latest %}<ol class="small">{% for x in latest %}<li>{{ x }}</li>{% endfor %}</ol>{% else %}<p class="small muted">none</p>{% endif %}
+    <h3>Rejected slots</h3>
+    {% if rejected %}<ul class="small">{% for x in rejected %}<li>{{ x }}</li>{% endfor %}</ul>{% else %}<p class="small muted">none</p>{% endif %}
+    <details><summary class="small">Last classification</summary><pre class="small">{{ s.classification|pretty }}</pre></details>
+    <details><summary class="small">All proposed slots ({{ proposed|length }})</summary><ul class="small">{% for x in proposed %}<li>{{ x }}</li>{% endfor %}</ul></details>
+  </div>
+</aside>
+</div>
+{% endblock %}

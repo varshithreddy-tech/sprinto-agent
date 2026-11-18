@@ -184,7 +184,7 @@ elif page == "Threads":
     left, right = st.columns([3, 2])
     with left:
         st.subheader(t["subject"])
-        for m in db.query("SELECT * FROM messages WHERE thread_id=? ORDER BY created_at, rowid", (tid,)):
+        for m in db.query("SELECT * FROM messages WHERE thread_id=? ORDER BY seq", (tid,)):
             who = "Prospect (simulated)" if m["direction"] == "inbound" else "Agent → DEMO_EMAIL"
             with st.chat_message("user" if m["direction"] == "inbound" else "assistant"):
                 st.caption(f"{who} · {m['created_at']} · {m['message_id']}" + (f" · provider id {m['provider_id']}" if m["provider_id"] else ""))

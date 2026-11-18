@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · Sprinto outbound agent</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --ink:#1d1d1b; --muted:#6b6b66; --line:#e3e2dc; --accent:#3b5bdb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#151514; --card:#1f1f1d; --ink:#ecebe6; --muted:#a3a29b; --line:#33332f; --accent:#7c95ff; } }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--ink);
+         font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; padding:16px }
+  form { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:24px; width:100%; max-width:360px }
+  h1 { font-size:19px; margin:0 0 4px } p { color:var(--muted); margin:0 0 16px; font-size:13.5px }
+  input { width:100%; box-sizing:border-box; font:inherit; padding:9px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink) }
+  button { margin-top:12px; width:100%; font:inherit; font-weight:600; padding:9px; border-radius:8px; border:0; background:var(--accent); color:#fff; cursor:pointer }
+  .err { color:#c92a2a; font-size:13.5px; margin-top:8px }
+</style></head>
+<body>
+<form method="post" action="/login">
+  <h1>Sprinto outbound agent</h1>
+  <p>Demo dashboard. Enter the access password.</p>
+  <input type="hidden" name="next" value="{{ next }}">
+  <input type="password" name="password" placeholder="Password" autofocus required autocomplete="current-password">
+  <button type="submit">Sign in</button>
+  {% if error %}<div class="err">Wrong password.</div>{% endif %}
+</form>
+</body></html>

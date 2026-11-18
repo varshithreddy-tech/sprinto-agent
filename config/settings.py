@@ -15,7 +15,17 @@ PROMPTS_DIR = CONFIG_DIR / "prompts"
 DATA_DIR = ROOT / "data"
 DECISION_LOG_DIR = DATA_DIR / "decision_logs"
 DB_PATH = Path(os.getenv("SPRINTO_DB_PATH", DATA_DIR / "sprinto.db"))
+# Postgres (Neon). When set, everything (app, worker, Vercel) uses it instead of the SQLite file.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+ON_VERCEL = bool(os.getenv("VERCEL"))
+# Web app login (local + Vercel) and cookie signing; CRON_SECRET guards the scheduled maintenance endpoint.
+APP_PASSWORD = os.getenv("APP_PASSWORD", "")
+SESSION_SECRET = os.getenv("SESSION_SECRET", "")
+CRON_SECRET = os.getenv("CRON_SECRET", "")
 ACTIVITY_SPOOL_PATH = DATA_DIR / "activity_spool.jsonl"   # failed log writes wait here for retry
+if ON_VERCEL:  # only /tmp is writable in a Vercel function
+    ACTIVITY_SPOOL_PATH = Path("/tmp/activity_spool.jsonl")
+    DECISION_LOG_DIR = Path("/tmp/decision_logs")
 FIXTURES_DIR = ROOT / "tests" / "fixtures"
 
 # ---- Keys / integrations -------------------------------------------------

@@ -1,0 +1,14 @@
+.venv
+data
+tests
+*.db
+.pytest_cache
+__pycache__
+# local-only entry points (Streamlit dashboard, CLI, research pipeline) are not deployed
+app.py
+run.py
+pipeline.py
+scraper
+research
+scripts
+requirements-local.txt

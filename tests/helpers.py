@@ -71,7 +71,7 @@ class Env:
         monkeypatch.setattr(S, "DECISION_LOG_DIR", tmp_path / "decision_logs")
         import agent.graph as ag
         ag.set_graph(None)  # never reuse a graph bound to another test's database
-        self.conn = db.connect(self.path)
+        self.conn = db.connect() if S.DATABASE_URL else db.connect(self.path)
         db.set_db(self.conn)
         self.cal = cp.DemoCalendar(self.conn)
         self.cal.seed(today=now.astimezone(ZoneInfo("Asia/Kolkata")).date())
@@ -83,6 +83,15 @@ class Env:
         self.graph = self.new_graph()
 
     def new_graph(self):
+        if S.DATABASE_URL:  # --pg: real PostgresSaver on the test schema
+            import psycopg
+            from psycopg.rows import dict_row
+            from langgraph.checkpoint.postgres import PostgresSaver
+            cp_conn = psycopg.connect(S.DATABASE_URL, autocommit=True, prepare_threshold=0, row_factory=dict_row)
+            self._pg_conns = getattr(self, "_pg_conns", []) + [cp_conn]
+            saver = PostgresSaver(cp_conn)
+            saver.setup()
+            return build_graph(saver, sender_factory=lambda d: self.sender, now=lambda: self.now)
         cp_conn = sqlite3.connect(str(self.path), check_same_thread=False)
         return build_graph(SqliteSaver(cp_conn), sender_factory=lambda d: self.sender, now=lambda: self.now)
 
@@ -91,8 +100,7 @@ class Env:
         db.execute("INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?)",
                    (tid, tid, "Priya Testwal", "CISO", "Acme", "SOC 2 evidence at Acme", db.now_iso(),
                     "2026-11-20T04:30:00+00:00", "AWAITING_REPLY"))
-        db.execute("INSERT INTO messages (message_id, thread_id, direction, author, subject, body, created_at) VALUES (?,?,?,?,?,?,?)",
-                   (f"out-initial-{tid}", tid, "outbound", "agent", "SOC 2 evidence at Acme", "Hi Priya, ...", db.now_iso()))
+        db.insert_message(f"out-initial-{tid}", tid, "outbound", "agent", "SOC 2 evidence at Acme", "Hi Priya, ...")
         init_thread(tid, "2026-11-20T04:30:00+00:00", [f"out-initial-{tid}"], delivery="dry-run", graph=self.graph)
         return tid
 
@@ -103,6 +111,8 @@ class Env:
     def close(self):
         import agent.graph as ag
         ag.set_graph(None)
+        for c in getattr(self, "_pg_conns", []):
+            c.close()
         db.set_db(None)
         cp.set_calendar(None)
         llm.set_llm(None)

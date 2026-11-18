@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Calendar{% endblock %}
+{% block content %}
+<h1>Demo calendar <span class="muted small">organizer: Asia/Kolkata</span></h1>
+<p>{% for w in weeks %}<a href="/calendar?week={{ w.isoformat() }}" class="pill" style="{{ 'background:var(--accent);color:#fff' if w == cur }}">Week of {{ w.strftime('%d %b') }}</a> {% endfor %}</p>
+<div class="scroll"><table style="table-layout:fixed">
+  <tr><th style="width:64px"></th>{% for d in days %}<th>{{ d.strftime('%a %d %b') }}</th>{% endfor %}</tr>
+  {% for tm in times %}
+  <tr><td class="muted small">{{ tm }}</td>
+    {% for d in days %}{% set cell = grid.get((d.isoformat(), tm)) %}
+    <td class="small" style="{{ 'background:var(--meet);color:#fff' if cell and cell.kind=='meeting' else ('background:var(--busy);color:#fff' if cell else '') }}">{{ ('📅 ' if cell.kind=='meeting' else '■ ') ~ cell.title if cell else '' }}</td>
+    {% endfor %}</tr>
+  {% endfor %}
+</table></div>
+<p class="small muted">■ busy block (seeded) · 📅 booked meeting. Weekdays 09:00–18:00 IST, 30-minute slots, 30-day horizon. The agent never claims access to the prospect's calendar.</p>
+{% if meetings %}
+<h2>Booked meetings</h2>
+<div class="scroll"><table><tr><th>Event</th><th>Title</th><th>Domain</th><th>Start (IST)</th><th>Status</th></tr>
+{% for m in meetings %}<tr><td class="small">{{ m.event_id }}</td><td>{{ m.title }}</td><td>{{ m.domain }}</td><td>{{ m.start_utc|ist }}</td><td>{{ m.status }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

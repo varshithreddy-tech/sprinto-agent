@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}{{ rec.domain }}{% endblock %}
+{% block content %}
+<p class="small"><a href="/">← Companies</a></p>
+<h1>{{ rec.domain }} <span class="pill">{{ log.status }}</span></h1>
+<p class="muted small">Rubric {{ log.rubric_version }} · mode {{ log.mode }} · run {{ log.run_id }}</p>
+{% if log.top_reason %}<div class="card"><b>Top reason:</b> {{ log.top_reason }}</div>{% endif %}
+{% if log.escalation_reason %}<div class="banner bad">Escalation: {{ log.escalation_reason }}</div>{% endif %}
+
+{% if q.dimensions %}
+<h2>Qualification: {{ '%g'|format(q.total) }} / 100 <span class="muted small">(best case with gaps filled: {{ '%g'|format(q.max_possible) if q.max_possible is not none }})</span></h2>
+<p class="muted small">Thresholds: total ≥ {{ thresholds.min_total }}, business fit = 2, compliance workload ≥ 1. Points = weight × level ÷ 2. The LLM proposes a level; code checks evidence and date windows.</p>
+<div class="scroll"><table>
+  <tr><th>Dimension</th><th>Weight</th><th>Level</th><th>LLM level</th><th>Points</th><th>Zero reason</th><th>Evidence</th><th>Reason</th><th>Code adjustments</th></tr>
+  {% for n, d in q.dimensions.items() %}
+  <tr><td>{{ n }}</td><td>{{ d.weight }}</td><td><b>{{ d.level }}</b></td><td>{{ d.llm_level }}</td><td>{{ '%g'|format(d.points) }}</td>
+      <td>{{ d.zero_reason or '' }}</td><td class="small">{{ d.evidence_ids|join(', ') }}</td><td class="small">{{ d.reason }}</td>
+      <td class="small">{{ d.adjustments|join('; ') }}</td></tr>
+  {% endfor %}
+</table></div>
+<details class="card"><summary>Flags</summary><pre>{{ q.flags|pretty }}</pre></details>
+{% elif q.flags %}
+<div class="card"><b>Flags:</b><pre>{{ q.flags|pretty }}</pre></div>
+{% endif %}
+
+{% if log.rounds %}
+<h2>Research rounds <span class="muted small">gap → source → new evidence → decision</span></h2>
+{% for r in log.rounds %}
+<details class="card"><summary>Round {{ r.round }}: {{ r.decision }}{% if r.total is defined and r.total is not none %} · total {{ '%g'|format(r.total) }}{% endif %}</summary>
+  <p><b>Evidence gap:</b> {{ r.evidence_gap }}</p>
+  <div class="scroll"><table><tr><th>URL</th><th>Status</th><th>Method</th><th>Words</th><th>Error</th></tr>
+  {% for s in r.selected_sources %}<tr><td class="small"><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.url }}</a></td><td>{{ s.status }}</td><td>{{ s.method or '' }}</td><td>{{ s.words }}</td><td class="small">{{ s.error or '' }}</td></tr>{% endfor %}
+  </table></div>
+  <p><b>New evidence:</b> {{ (r.new_evidence or [])|join(', ') or 'none' }}</p>
+  {% if r.reasons %}<p><b>Decision reasons:</b> {{ r.reasons|join('; ') }}</p>{% endif %}
+</details>
+{% endfor %}
+{% endif %}
+
+{% if log.facts %}
+{% set verified = log.facts|selectattr('verified')|list %}
+<h2>Evidence <span class="muted small">{{ verified|length }} verified / {{ log.facts|length }} — every excerpt was checked against the cleaned page text</span></h2>
+<div class="scroll"><table>
+  <tr><th>ID</th><th>Field</th><th>Value</th><th>Label</th><th>✓</th><th>Exact excerpt</th><th>Source</th><th>Retrieved</th><th>Published</th></tr>
+  {% for f in log.facts %}
+  <tr><td>{{ f.id }}</td><td>{{ f.field }}</td><td>{{ f.value }}</td><td>{{ f.label }}</td><td>{{ '✓' if f.verified else '✗' }}</td>
+      <td class="small">“{{ f.exact_excerpt }}”{% if f.verification_note %}<div class="muted">{{ f.verification_note }}</div>{% endif %}</td>
+      <td class="small"><a href="{{ f.source_url }}" target="_blank" rel="noopener">{{ f.source_url }}</a></td>
+      <td class="small">{{ f.retrieval_date or '' }}</td><td class="small">{{ f.publication_date or '' }}</td></tr>
+  {% endfor %}
+</table></div>
+{% endif %}
+
+{% if log.pages %}
+<details class="card"><summary>Pages fetched ({{ log.pages|length }})</summary>
+<div class="scroll"><table><tr><th>URL</th><th>Status</th><th>Method</th><th>Words</th><th>Reason</th><th>Error</th></tr>
+{% for p in log.pages %}<tr><td class="small">{{ p.url }}</td><td>{{ p.status }}</td><td>{{ p.method or '' }}</td><td>{{ p.words }}</td><td class="small">{{ p.reason or '' }}</td><td class="small">{{ p.error or '' }}</td></tr>{% endfor %}
+</table></div></details>
+{% endif %}
+
+{% if log.contact %}
+{% set c = log.contact %}
+<h2>Contact selection <span class="pill">{{ c.status }}</span></h2>
+<p class="muted small">{{ c.selection_reason or c.reason or '' }} · provider: {{ c.provider }} · pass = ≥ 8/10 with association and functional ownership &gt; 0; role preference GRC → Security → CTO/VP Eng → founder (founder-led only)</p>
+<div class="scroll"><table>
+  <tr><th></th><th>Name</th><th>Title</th><th>Role cat.</th><th>Assoc.</th><th>Ownership</th><th>Drive</th><th>Match</th><th>Identity</th><th>Total</th><th>Pass</th><th>First-party page</th><th>Reasons</th></tr>
+  {% for x in c.candidates %}
+  <tr><td>{{ '★' if x.selected }}</td><td>{{ x.name }}</td><td>{{ x.title }}</td><td>{{ x.role_category }}</td>
+      <td>{{ x.scores.company_association }}</td><td>{{ x.scores.functional_ownership }}</td><td>{{ x.scores.ability_to_drive }}</td>
+      <td>{{ x.scores.match_to_need }}</td><td>{{ x.scores.identity_quality }}</td><td><b>{{ x.total }}</b></td><td>{{ '✓' if x.passed else '' }}</td>
+      <td class="small">{{ x.first_party_page or '' }}</td>
+      <td class="small">{% for k, v in x.reasons.items() %}<div><b>{{ k }}:</b> {{ v }}</div>{% endfor %}{% if x.adjustments %}<div class="warn">{{ x.adjustments|join('; ') }}</div>{% endif %}</td></tr>
+  {% endfor %}
+</table></div>
+{% endif %}
+
+{% if log.pains %}
+<h2>Pain hypotheses <span class="pill">{{ log.pains.status }}</span></h2>
+{% for h in log.pains.hypotheses %}
+<div class="card">
+  <b>#{{ loop.index }} · {{ h.score }}/10 · {{ 'PASS' if h.passed else 'FAIL' }} · {{ h.capability }}</b>
+  <p><b>Observed fact:</b> {{ h.observed_fact }} <span class="muted">({{ h.evidence_ids|join(', ') }})</span></p>
+  <p><b>Hypothesis:</b> {{ h.hypothesis }}</p>
+  <p><b>Role relevance:</b> {{ h.role_relevance }}</p>
+  <p><b>Possible consequence:</b> {{ h.possible_consequence }}</p>
+  <p class="small muted">Scores {{ h.scores }} {{ h.code_notes or '' }} {{ h.fail_reasons or '' }}</p>
+</div>
+{% endfor %}
+{% endif %}
+
+{% if log.email %}
+<h2>Email <span class="pill">{{ log.email.status }}</span></h2>
+{% for v in log.email.versions %}
+<details class="card" {{ 'open' if v.version == log.email.final_version }}>
+  <summary>Version {{ v.version }} · QA {{ v.qa_total }}/10 · {{ 'PASS' if v.passed else 'FAIL' }} · {{ v.words }} words</summary>
+  <p><b>Subject:</b> {{ v.subject }}</p>
+  <div class="card mail">{{ v.body }}</div>
+  <p class="small"><b>QA scores:</b> {{ v.qa_scores }}</p>
+  <p class="small"><b>Mandatory checks:</b> {% for k, ok in v.qa_checks.items() %}<span class="{{ 'ok' if ok else 'bad' }}">{{ '✓' if ok else '✗' }} {{ k }}</span>&nbsp; {% endfor %}</p>
+  {% if v.issues or v.code_notes %}<p class="small warn">{{ v.issues }} {{ v.code_notes }}</p>{% endif %}
+</details>
+{% endfor %}
+{% endif %}
+
+{% if log.send %}
+<h2>Send</h2>
+<div class="card"><pre>{{ log.send|pretty }}</pre></div>
+{% endif %}
+{% endblock %}

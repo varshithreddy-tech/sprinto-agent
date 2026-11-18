@@ -78,7 +78,7 @@ def domain_search(domain: str, *, mock: bool = False, client: httpx.Client | Non
             sleep(min(2 ** attempt, 8))
             continue
         data = body.get("data", {})
-        db.execute("INSERT OR REPLACE INTO hunter_cache VALUES (?,?,?,?)",
+        db.execute("INSERT OR REPLACE INTO hunter_cache (domain, payload, fetched_at, source) VALUES (?,?,?,?)",
                    (domain, json.dumps(data), db.now_iso(), "hunter"))
         return {**data, "_source": "hunter"}
     raise HunterTransientError(f"Hunter failed after {S.MAX_FETCH_ATTEMPTS} attempts: {last}")

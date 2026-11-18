@@ -17,7 +17,7 @@ git clone https://github.com/varshithreddy-tech/sprinto-agent.git
 cd sprinto-agent
 uv venv --python 3.12 .venv          # or: python -m venv .venv
 .venv\Scripts\activate               # Windows (macOS/Linux: source .venv/bin/activate)
-pip install -r requirements.txt
+pip install -r requirements-local.txt   # requirements.txt is the slim Vercel set
 python -m playwright install chromium
 copy .env.example .env               # then fill it in
 ```
@@ -158,19 +158,33 @@ The check is idempotent (escalated threads are no longer waiting). It only touch
    - **Your current key is send-only** ("This API key is restricted to only send emails"), so it can't look emails up. Create a **Full access** key in Resend and put it in `RESEND_API_KEY` to enable lookups.
 4. **A sweep** runs on the dashboard watcher, `--check-deadlines` and `--watch`. It re-checks `SEND_UNCERTAIN` and stale `PENDING` operations, and marks the ones it finds as SENT. A reconciled first email also updates the company to `EMAIL_SENT` and opens its reply thread. The sweep **never re-sends**: anything not found stays uncertain for a human, and appears under "Sends needing reconciliation" on the Activity log page.
 
-## Hosting
+## Deployment (Vercel + Neon)
 
-This project runs locally (`streamlit run app.py`). It is **not deployed to Vercel**, because:
+Live app: **https://sprinto-agent.vercel.app** (login required — the password is `APP_PASSWORD` in your `.env` / Vercel env).
 
-- the Streamlit dashboard needs a long-running server with websocket connections, and Vercel only runs short serverless functions;
-- researching one domain takes several minutes, beyond Vercel's function time limit;
-- headless Chromium is too large for a Vercel function;
-- SQLite storage and the background watcher need a persistent disk and process.
+How the components map onto the deployment:
 
-Options if you need hosting later:
+| Component | Where it runs |
+|---|---|
+| Growth Lead UI | **Vercel**: FastAPI web app (`web/app.py`, entry `api/index.py`): Run, Companies + full decision logs, Threads with the simulated-reply box, Calendar, Activity log |
+| Reply agent + demo calendar | **Vercel functions**: LangGraph with a **PostgresSaver** checkpointer; Gemini classifies and drafts; Resend sends to DEMO_EMAIL |
+| Database | **Neon Postgres** (`sprinto-agent`, Singapore): every table, the job queue and the LangGraph checkpoints |
+| Research pipeline (scrape → qualify → Hunter → pains → email QA → send) | **Research worker**: `python run.py --worker` on a machine that can run headless Chromium for minutes per domain. It claims domains queued from the Vercel Run page and writes results back to Neon. This step can't run on Vercel (function time limit, Chromium size). |
+| Maintenance (log retry, send reconciliation, no-reply deadlines) | Throttled on page visits (every 10 min at most), the worker, and a daily **Vercel Cron** hitting `/tasks/cron` (authorised by `CRON_SECRET`) |
 
-- **Streamlit Community Cloud** can deploy straight from this repo. Its storage resets when the app restarts.
-- **A container host with a persistent disk** can run it as-is.
-- **Vercel would need a rebuild:** serverless API routes, a hosted Postgres, and the pipeline split into short steps.
+**Auto-deploys:** the Vercel project is connected to this GitHub repo, so every push to `main` redeploys. Environment variables live in Vercel, not the repo: `GEMINI_API_KEY`, `GEMINI_MODEL`, `RESEND_API_KEY`, `DEMO_EMAIL`, `ORGANIZER_TZ`, `REPLY_DEADLINE_HOURS`, `DATABASE_URL`, `APP_PASSWORD`, `SESSION_SECRET` and `CRON_SECRET`. Vercel installs only the slim `requirements.txt`; `.vercelignore` keeps the scraper, research code, Streamlit app and tests out of the function.
 
-Secrets stay in `.env` (gitignored). Never commit them.
+**Using it:**
+
+1. Open the site and log in.
+2. On your laptop, start the worker:
+
+   ```bash
+   python run.py --worker
+   ```
+3. Queue domains on **Run**. Progress appears live, and the Run page shows whether the worker is online.
+4. Open **Threads** and type simulated prospect replies. The reply agent runs on Vercel.
+
+Local options: the same web app runs with `uvicorn web.app:app --port 8600`. The Streamlit dashboard (`streamlit run app.py`) also still works; both use Neon when `DATABASE_URL` is set, otherwise `data/sprinto.db`.
+
+**Tests:** `python -m pytest -q` runs everything on SQLite. `python -m pytest -q --pg` runs the same suite against Postgres on the Neon `ci-tests` branch (`TEST_DATABASE_URL`), each test in a throwaway schema. `scripts/migrate_sqlite_to_pg.py` copies a local SQLite database, including thread states, into Neon.

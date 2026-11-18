@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Run{% endblock %}
+{% block content %}
+{% if active %}<meta http-equiv="refresh" content="6">{% endif %}
+<h1>Run outbound pipeline</h1>
+<div class="banner {{ 'ok' if hb_age is not none and hb_age < 90 else 'warn' }} small">
+  Research (scraping company sites with a headless browser, several minutes per domain) runs on the
+  <b>research worker</b>: <code>python run.py --worker</code> on your machine. This page queues domains in the shared Neon
+  database and shows progress live.
+  {% if hb_age is none %}<b>No worker has connected yet.</b>{% elif hb_age < 90 %}Worker online (seen {{ hb_age }}s ago).{% else %}<b>Worker offline</b> (last seen {{ (hb_age/60)|round|int }} min ago) — queued jobs wait until it's running.{% endif %}
+</div>
+{% if queued %}<div class="banner ok">Queued {{ queued }} domain(s).</div>{% endif %}
+<form method="post" action="/run" class="card">
+  <label for="domains"><b>Domains</b> <span class="muted small">one per line, # comments allowed</span></label>
+  <textarea id="domains" name="domains" rows="10">{{ default }}</textarea>
+  <p>
+    <label><input type="checkbox" name="mock_hunter" checked> Mock Hunter (fixtures)</label> &nbsp;
+    <label><input type="checkbox" name="dry_run" checked> Dry run (no real send)</label> &nbsp;
+    <label><input type="checkbox" name="force"> Re-process already-sent domains</label>
+  </p>
+  <p class="small muted">Unticking Mock Hunter uses real Hunter credits; unticking Dry run sends real emails to DEMO_EMAIL.</p>
+  <button type="submit" data-label="Queuing…">Queue run</button>
+</form>
+<h2>Jobs</h2>
+{% if not rows %}<p class="muted">No jobs yet.</p>{% else %}
+<div class="scroll"><table>
+  <tr><th>#</th><th>Domain</th><th>Mode</th><th>Status</th><th>Progress</th><th>Result</th><th>Queued</th><th>Finished</th></tr>
+  {% for j in rows %}
+  <tr><td>{{ j.id }}</td><td>{% if j.result_status %}<a href="/company/{{ j.domain }}">{{ j.domain }}</a>{% else %}{{ j.domain }}{% endif %}</td>
+      <td class="small">{{ 'mock' if j.mock_hunter else 'live' }} Hunter · {{ 'dry run' if j.dry_run else 'real send' }}{{ ' · force' if j.force }}</td>
+      <td><span class="pill {{ 'ok' if j.status=='done' else ('bad' if j.status=='failed' else 'warn') }}">{{ j.status }}</span></td>
+      <td class="small">{{ j.progress or '' }}{% if j.error %}<div class="bad">{{ j.error }}</div>{% endif %}</td>
+      <td>{{ j.result_status or '' }}</td><td class="small muted">{{ j.created_at|ist('%d %b %H:%M') }}</td>
+      <td class="small muted">{{ j.finished_at|ist('%d %b %H:%M') if j.finished_at else '' }}</td></tr>
+  {% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

@@ -10,7 +10,6 @@ import threading
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
-from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 
 from agent import state as st
@@ -31,7 +30,7 @@ def _thread(thread_id: str) -> dict:
 
 
 def _last_agent_message(thread_id: str) -> str:
-    r = db.query_one("SELECT body FROM messages WHERE thread_id=? AND direction='outbound' ORDER BY created_at DESC, rowid DESC LIMIT 1",
+    r = db.query_one("SELECT body FROM messages WHERE thread_id=? AND direction='outbound' ORDER BY seq DESC LIMIT 1",
                      (thread_id,))
     return r["body"] if r else ""
 
@@ -250,9 +249,8 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
             res = send_mod.send_once(op, "reply_" + item["kind"], state["thread_id"], subject, text, sender, attachments=att)
             mid = f"agent-{op}"
             agent_ids.append(mid)
-            db.execute("INSERT OR IGNORE INTO messages (message_id, thread_id, direction, author, subject, body, provider_id, created_at)"
-                       " VALUES (?,?,?,?,?,?,?,?)", (mid, state["thread_id"], "outbound", "agent", subject,
-                                                     text + ("\n\n[invite.ics attached]" if att else ""), res.get("provider_id"), db.now_iso()))
+            db.insert_message(mid, state["thread_id"], "outbound", "agent", subject,
+                              text + ("\n\n[invite.ics attached]" if att else ""), res.get("provider_id"))
             logs.append(entry("REPLY_" + res["status"], {"kind": item["kind"], "op_id": op, "provider_id": res.get("provider_id")}))
             if res["status"] not in (send_mod.SENT, send_mod.DUPLICATE):
                 upd["escalation_reason"] = f"SEND_UNCERTAIN for {item['kind']}: {res.get('error')}"
@@ -360,14 +358,32 @@ def build_graph(checkpointer, sender_factory: Callable[[str], object] | None = N
 
 # ---------------------------------------------------------------------- runtime API
 _graph = None
-_cp_conn: sqlite3.Connection | None = None
+_cp_conn = None
+_graph_lock = threading.Lock()
+
+
+def make_checkpointer():
+    """PostgresSaver on Neon when DATABASE_URL is set, else SqliteSaver on the local file."""
+    global _cp_conn
+    if S.DATABASE_URL:
+        import psycopg
+        from psycopg.rows import dict_row
+        from langgraph.checkpoint.postgres import PostgresSaver
+        _cp_conn = psycopg.connect(S.DATABASE_URL, autocommit=True, prepare_threshold=0, row_factory=dict_row)
+        saver = PostgresSaver(_cp_conn)
+        saver.setup()
+        return saver
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    _cp_conn = sqlite3.connect(str(S.DB_PATH), check_same_thread=False)
+    return SqliteSaver(_cp_conn)
 
 
 def get_graph():
-    global _graph, _cp_conn
+    global _graph
     if _graph is None:
-        _cp_conn = sqlite3.connect(str(S.DB_PATH), check_same_thread=False)
-        _graph = build_graph(SqliteSaver(_cp_conn))
+        with _graph_lock:
+            if _graph is None:
+                _graph = build_graph(make_checkpointer())
     return _graph
 
 
@@ -401,8 +417,7 @@ def process_inbound(thread_id: str, body: str, simulated: bool = True, author: s
     """Store an inbound message on a tracked thread and run the reply agent on it."""
     _thread(thread_id)  # only tracked threads
     mid = message_id or send_mod.new_message_id()
-    db.execute("INSERT OR IGNORE INTO messages (message_id, thread_id, direction, author, subject, body, provider_id, created_at, simulated)"
-               " VALUES (?,?,?,?,?,?,?,?,?)", (mid, thread_id, "inbound", author, None, body, None, db.now_iso(), int(simulated)))
+    db.insert_message(mid, thread_id, "inbound", author, None, body, None, simulated=simulated)
     return (graph or get_graph()).invoke({"incoming": {"message_id": mid, "body": body, "author": author}}, _cfg(thread_id))
 
 
@@ -488,7 +503,7 @@ def start_deadline_watcher(interval_minutes: float | None = None) -> threading.T
             except Exception:
                 pass
             try:
-                from pipeline import reconcile_sends
+                from outreach.records import reconcile_sends
                 LAST_RECONCILE.update(at=datetime.now(timezone.utc).isoformat(), results=reconcile_sends())
             except Exception as e:
                 LAST_RECONCILE.update(at=datetime.now(timezone.utc).isoformat(), error=str(e))

@@ -1,0 +1,12 @@
+# Everything for running locally: research worker (scraper + headless browser), Streamlit dashboard, tests.
+-r requirements.txt
+selectolax>=0.3
+beautifulsoup4>=4.12
+trafilatura>=1.12
+playwright>=1.45
+langgraph-checkpoint-sqlite>=2.0
+streamlit>=1.36
+pandas>=2.0
+tenacity>=8.3
+uvicorn>=0.30
+pytest>=8.0
