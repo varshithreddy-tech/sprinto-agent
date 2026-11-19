@@ -3,58 +3,189 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Sprinto Outbound Agent{% endblock %} · demo</title>
+<title>{% block title %}Overview{% endblock %} · Sprinto Outbound</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#f7f7f5; --card:#fff; --ink:#1d1d1b; --muted:#6b6b66; --line:#e3e2dc; --accent:#3b5bdb;
-          --ok:#2b8a3e; --warn:#b7791f; --bad:#c92a2a; --busy:#9e9e9e; --meet:#2e7d32; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#151514; --card:#1f1f1d; --ink:#ecebe6; --muted:#a3a29b;
-          --line:#33332f; --accent:#7c95ff; } }
-  * { box-sizing:border-box } body { margin:0; font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-          background:var(--bg); color:var(--ink) }
-  header { display:flex; flex-wrap:wrap; gap:6px 18px; align-items:center; padding:12px 20px; border-bottom:1px solid var(--line);
-          background:var(--card); position:sticky; top:0; z-index:5 }
-  header .brand { font-weight:700 } header nav a { color:var(--muted); text-decoration:none; padding:4px 8px; border-radius:6px }
-  header nav a.on, header nav a:hover { color:var(--ink); background:var(--bg) }
-  header .meta { margin-left:auto; color:var(--muted); font-size:12px }
-  main { max-width:1200px; margin:0 auto; padding:20px 16px 60px }
-  h1 { font-size:22px; margin:6px 0 14px } h2 { font-size:17px; margin:26px 0 10px } h3 { font-size:15px; margin:16px 0 6px }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin:12px 0 }
-  .muted { color:var(--muted) } .small { font-size:12.5px }
-  table { width:100%; border-collapse:collapse; background:var(--card); font-size:13.5px }
-  th, td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--line); vertical-align:top }
-  th { font-weight:600; color:var(--muted); white-space:nowrap } .scroll { overflow-x:auto; border:1px solid var(--line); border-radius:10px }
-  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; font-weight:600; background:var(--bg); border:1px solid var(--line) }
-  .ok { color:var(--ok) } .warn { color:var(--warn) } .bad { color:var(--bad) }
-  a { color:var(--accent) } pre, .mail { white-space:pre-wrap; font:13px/1.5 ui-monospace, Consolas, monospace; margin:0 }
-  textarea, input[type=password], input[type=text] { width:100%; font:inherit; padding:8px; border-radius:8px; border:1px solid var(--line);
-          background:var(--bg); color:var(--ink) }
-  button { font:inherit; font-weight:600; padding:8px 14px; border-radius:8px; border:0; background:var(--accent); color:#fff; cursor:pointer }
-  button.secondary { background:var(--bg); color:var(--ink); border:1px solid var(--line) } button[disabled] { opacity:.6; cursor:wait }
-  .banner { padding:10px 14px; border-radius:8px; margin:10px 0; border:1px solid var(--line) }
-  .banner.warn { background:color-mix(in srgb, var(--warn) 12%, var(--card)) } .banner.ok { background:color-mix(in srgb, var(--ok) 12%, var(--card)) }
-  .banner.bad { background:color-mix(in srgb, var(--bad) 12%, var(--card)) }
-  .grid2 { display:grid; grid-template-columns: minmax(0,3fr) minmax(0,2fr); gap:16px } @media (max-width:860px){ .grid2 { grid-template-columns:1fr } }
-  details summary { cursor:pointer; font-weight:600 } .kv td:first-child { color:var(--muted); width:38% }
+  /* One hue: navy, light -> dark, on white. Status = fill / outline / tint + icon + word, never colour alone. */
+  :root {
+    --n950:#081530; --n900:#0F2547; --n800:#163463; --n700:#22457D; --n600:#35588F; --n500:#4A6694;
+    --n400:#7489B0; --n300:#A3B3D0; --n200:#C9D4E7; --n150:#DCE4F1; --n100:#E9EEF7; --n50:#F5F7FB; --white:#FFFFFF;
+    --ink:var(--n900); --ink-2:var(--n600); --ink-3:var(--n500); --line:var(--n150); --surface:var(--white); --page:var(--n50);
+    --radius:10px; --shadow:0 1px 2px rgba(15,37,71,.06), 0 1px 1px rgba(15,37,71,.04);
+    /* legacy names used by older templates, mapped into the navy family */
+    --accent:var(--n900); --ok:var(--n900); --warn:var(--n600); --bad:var(--n900); --busy:var(--n150); --meet:var(--n900);
+    --bg:var(--page); --card:var(--surface); --muted:var(--ink-2);
+  }
+  * { box-sizing:border-box }
+  html { -webkit-text-size-adjust:100% }
+  body { margin:0; font:14.5px/1.55 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--page); color:var(--ink);
+         font-feature-settings:"tnum" 1, "cv11" 1; }
+  a { color:var(--n800); text-decoration-color:var(--n300); text-underline-offset:3px }
+  a:hover { color:var(--n950); text-decoration-color:var(--n900) }
+
+  /* ---------- top bar ---------- */
+  .topbar { position:sticky; top:0; z-index:10; background:var(--n900); color:var(--white) }
+  .topbar .in { max-width:1180px; margin:0 auto; padding:0 20px; display:flex; align-items:center; gap:28px; min-height:58px; flex-wrap:wrap }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:-.01em; color:var(--white); text-decoration:none; white-space:nowrap }
+  .brand .mark { width:26px; height:26px; border-radius:7px; background:var(--white); color:var(--n900); display:grid; place-items:center; font-size:14px; font-weight:800 }
+  .brand small { font-weight:500; color:var(--n300); margin-left:2px }
+  .nav { display:flex; gap:2px; flex-wrap:wrap }
+  .nav a { color:var(--n200); text-decoration:none; padding:7px 11px; border-radius:7px; font-weight:500; font-size:13.5px; display:flex; align-items:center; gap:6px }
+  .nav a:hover { color:var(--white); background:rgba(255,255,255,.07) }
+  .nav a.on { color:var(--n900); background:var(--white) }
+  .nav .count { min-width:19px; height:19px; padding:0 6px; border-radius:99px; background:var(--white); color:var(--n900); font-size:11.5px; font-weight:700; display:inline-grid; place-items:center }
+  .nav a.on .count { background:var(--n900); color:var(--white) }
+  .topbar .meta { margin-left:auto; font-size:12px; color:var(--n300); white-space:nowrap }
+
+  main { max-width:1180px; margin:0 auto; padding:28px 20px 72px }
+  h1 { font-size:24px; line-height:1.25; letter-spacing:-.02em; margin:0 0 4px; font-weight:700 }
+  h2 { font-size:15px; letter-spacing:-.005em; margin:30px 0 12px; font-weight:650 }
+  h3 { font-size:14px; margin:16px 0 6px; font-weight:600 }
+  .lede { color:var(--ink-2); margin:0 0 22px; max-width:760px }
+  .muted { color:var(--ink-2) } .small { font-size:12.5px } .faint { color:var(--n400) }
+  .eyebrow { font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); font-weight:600 }
+
+  /* ---------- surfaces ---------- */
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px; margin:12px 0; box-shadow:var(--shadow) }
+  .card.flat { box-shadow:none }
+  .card.feature { border:1.5px solid var(--n900) }
+  .scroll { overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); box-shadow:var(--shadow) }
+  table { width:100%; border-collapse:collapse; font-size:13.5px }
+  th, td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--n100); vertical-align:top }
+  tr:last-child td { border-bottom:0 }
+  th { font-weight:600; color:var(--ink-3); font-size:12px; letter-spacing:.02em; white-space:nowrap; background:var(--n50) }
+  tbody tr:hover td, table tr:hover td { background:var(--n50) }
+  pre, .mail { white-space:pre-wrap; font:12.8px/1.55 ui-monospace, "Cascadia Mono", Consolas, monospace; margin:0; color:var(--n800) }
+  .mail { background:var(--n50); border:1px solid var(--n100); border-radius:8px; padding:12px 14px }
+  details summary { cursor:pointer; font-weight:600; list-style:none } details summary::-webkit-details-marker { display:none }
+  details summary::before { content:"›"; display:inline-block; margin-right:8px; transition:transform .15s; color:var(--ink-3) }
+  details[open] summary::before { transform:rotate(90deg) }
+  .kv td:first-child { color:var(--ink-3); width:40% }
+
+  /* ---------- status: monochrome, always icon + word ---------- */
+  .pill { display:inline-flex; align-items:center; gap:5px; padding:2px 9px; border-radius:99px; font-size:12px; font-weight:600;
+          border:1px solid var(--n300); color:var(--n800); background:var(--white); white-space:nowrap; line-height:1.6 }
+  .pill.solid { background:var(--n900); border-color:var(--n900); color:var(--white) }
+  .pill.tint { background:var(--n100); border-color:var(--n100); color:var(--n700) }
+  .pill.dash { border-style:dashed; color:var(--n600) }
+  .pill .i { font-size:11px; line-height:1 }
+  .ok { color:var(--n900); font-weight:600 } .warn { color:var(--n600) } .bad { color:var(--n900); font-weight:600; text-decoration:underline dotted var(--n400) }
+  .banner { padding:11px 14px; border-radius:8px; margin:12px 0; border:1px solid var(--n200); background:var(--white); color:var(--n800) }
+  .banner.ok { background:var(--n100); border-color:var(--n100) }
+  .banner.warn { background:var(--white); border-style:dashed; border-color:var(--n400) }
+  .banner.bad { background:var(--white); border:1.5px solid var(--n900); font-weight:500 }
+  .banner.bad::before { content:"! "; font-weight:800 }
+
+  /* ---------- forms ---------- */
+  textarea, input[type=password], input[type=text] { width:100%; font:inherit; padding:9px 11px; border-radius:8px; border:1px solid var(--n200);
+         background:var(--white); color:var(--ink) }
+  textarea:focus, input:focus { outline:2px solid var(--n900); outline-offset:1px; border-color:var(--n900) }
+  input[type=checkbox] { accent-color:var(--n900) }
+  button, .btn { font:inherit; font-weight:600; font-size:13.5px; padding:8px 15px; border-radius:8px; border:1px solid var(--n900); background:var(--n900);
+         color:var(--white); cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:6px }
+  button:hover, .btn:hover { background:var(--n950); color:var(--white) }
+  button.secondary, .btn.secondary { background:var(--white); color:var(--n900); border-color:var(--n300) }
+  button.secondary:hover, .btn.secondary:hover { border-color:var(--n900); background:var(--n50) }
+  button[disabled] { opacity:.55; cursor:wait }
+  code { font:12.5px ui-monospace, Consolas, monospace; background:var(--n100); padding:1px 6px; border-radius:5px; color:var(--n900) }
+
+  .grid2 { display:grid; grid-template-columns: minmax(0,3fr) minmax(0,2fr); gap:18px }
+  @media (max-width:880px){ .grid2 { grid-template-columns:1fr } .topbar .meta { display:none } }
+
+  /* ---------- dashboard ---------- */
+  .tiles { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:12px; margin:6px 0 4px }
+  @media (max-width:980px){ .tiles { grid-template-columns:repeat(2, minmax(0,1fr)) } }
+  .tile { background:var(--white); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px 13px; box-shadow:var(--shadow);
+          text-decoration:none; color:var(--ink); display:block; position:relative }
+  .tile:hover { border-color:var(--n400) }
+  .tile .label { font-size:12px; color:var(--ink-3); font-weight:500 }
+  .tile .value { font-size:30px; font-weight:700; letter-spacing:-.03em; line-height:1.15; margin-top:4px }
+  .tile .sub { font-size:12px; color:var(--ink-2); margin-top:2px }
+  .tile.cta { background:var(--n900); border-color:var(--n900); color:var(--white) }
+  .tile.cta .label, .tile.cta .sub { color:var(--n200) }
+  .tile.cta:hover { background:var(--n950) }
+  .tile .arrow { position:absolute; top:13px; right:14px; font-size:13px; opacity:.6 }
+
+  .panel { background:var(--white); border:1px solid var(--line); border-radius:var(--radius); padding:18px 20px; box-shadow:var(--shadow) }
+  .panel h2 { margin:0 0 4px } .panel .hint { font-size:12.5px; color:var(--ink-2); margin:0 0 14px }
+  .dash-grid { display:grid; grid-template-columns:minmax(0,7fr) minmax(0,5fr); gap:16px; margin-top:16px }
+  @media (max-width:980px){ .dash-grid { grid-template-columns:1fr } }
+
+  .funnel { display:grid; gap:7px }
+  .frow { display:grid; grid-template-columns:150px minmax(0,1fr) 64px; align-items:center; gap:12px; font-size:13px }
+  .frow .name { color:var(--ink-2) } .frow .num { text-align:right; font-weight:650 } .frow .num span { font-weight:500; color:var(--ink-3); font-size:11.5px }
+  .bar { height:22px; background:var(--n50); border-radius:4px; position:relative; overflow:visible }
+  .bar .fill { position:absolute; inset:0 auto 0 0; border-radius:4px; min-width:3px }
+  .tip { position:relative } .tip:hover::after { content:attr(data-tip); position:absolute; left:0; bottom:calc(100% + 6px); background:var(--n950); color:var(--white);
+         font-size:12px; padding:5px 8px; border-radius:6px; white-space:nowrap; z-index:5; pointer-events:none }
+
+  .scores { display:grid; gap:4px }
+  .srow { display:grid; grid-template-columns:150px minmax(0,1fr) 44px 150px; align-items:center; gap:12px; font-size:13px; padding:4px 6px; border-radius:7px;
+          text-decoration:none; color:var(--ink) }
+  .srow:hover { background:var(--n50) }
+  .srow .dom { font-weight:550; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .srow .val { text-align:right; font-weight:650 }
+  .sbar { height:10px; background:var(--n100); border-radius:99px; position:relative }
+  .sbar .fill { position:absolute; inset:0 auto 0 0; border-radius:99px }
+  .sbar .fill.q { background:var(--n900) } .sbar .fill.nq { background:var(--n300) }
+  .sbar .thr { position:absolute; top:-5px; bottom:-5px; width:2px; background:var(--n950); border-radius:1px }
+  @media (max-width:600px){
+    .frow { grid-template-columns:92px minmax(0,1fr) 52px; gap:8px }
+    .srow { grid-template-columns:minmax(0,1fr) 40px; row-gap:6px }
+    .srow .sbar { grid-column:1 / -1; grid-row:2 }
+    .srow > span:last-child { grid-column:1 / -1; grid-row:3 }
+    main { padding:20px 16px 56px }
+  }
+  .legend { display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--ink-2); margin-top:12px }
+  .legend i { display:inline-block; width:12px; height:8px; border-radius:99px; margin-right:6px; vertical-align:middle }
+
+  .list { list-style:none; margin:0; padding:0 }
+  .list li { display:flex; gap:12px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--n100) }
+  .list li:last-child { border-bottom:0 }
+  .list .ico { width:28px; height:28px; flex:0 0 28px; border-radius:8px; display:grid; place-items:center; background:var(--n100); color:var(--n900); font-weight:700; font-size:13px }
+  .list .ico.solid { background:var(--n900); color:var(--white) }
+  .list .t { font-weight:600 } .list .d { font-size:12.5px; color:var(--ink-2) }
+  .list .when { margin-left:auto; font-size:12px; color:var(--ink-3); white-space:nowrap }
+  .allclear { display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--n50); border-radius:8px; color:var(--n700); font-size:13px }
+
+  .datebox { width:44px; flex:0 0 44px; border:1px solid var(--n200); border-radius:8px; text-align:center; overflow:hidden; line-height:1.15 }
+  .datebox b { display:block; background:var(--n900); color:var(--white); font-size:10.5px; letter-spacing:.06em; padding:2px 0 }
+  .datebox span { display:block; font-size:16px; font-weight:700; padding:3px 0 }
+
+  .statusline { display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:12.5px; color:var(--ink-2) }
+  .dot { width:8px; height:8px; border-radius:50%; display:inline-block; background:var(--n300) }
+  .dot.on { background:var(--n900); box-shadow:0 0 0 3px var(--n150) }
+
+  /* company page header */
+  .summary { display:grid; grid-template-columns:auto 1fr; gap:22px; align-items:center }
+  .bigscore { width:108px; height:108px; border-radius:50%; display:grid; place-items:center; position:relative }
+  .bigscore .n { font-size:30px; font-weight:750; letter-spacing:-.03em } .bigscore .of { font-size:11.5px; color:var(--ink-3); margin-top:-4px }
+  .facts { display:flex; flex-wrap:wrap; gap:8px 26px; font-size:13px }
+  .facts div { min-width:140px } .facts .k { color:var(--ink-3); font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; font-weight:600 }
+  .dimbar { height:8px; background:var(--n100); border-radius:99px; width:120px; display:inline-block; vertical-align:middle; position:relative }
+  .dimbar i { position:absolute; inset:0 auto 0 0; background:var(--n900); border-radius:99px }
 </style>
 </head>
 <body>
-<header>
-  <span class="brand">Sprinto outbound agent <span class="pill">DEMO</span></span>
-  <nav>
-    <a href="/run" class="{{ 'on' if nav=='run' }}">Run</a>
-    <a href="/drafts" class="{{ 'on' if nav=='drafts' }}">Drafts{% if drafts_count %} <span class="pill">{{ drafts_count }}</span>{% endif %}</a>
-    <a href="/" class="{{ 'on' if nav=='companies' }}">Companies</a>
+<header class="topbar"><div class="in">
+  <a class="brand" href="/"><span class="mark">S</span>Sprinto Outbound <small>demo</small></a>
+  <nav class="nav">
+    <a href="/" class="{{ 'on' if nav=='overview' }}">Overview</a>
+    <a href="/companies" class="{{ 'on' if nav=='companies' }}">Companies</a>
+    <a href="/drafts" class="{{ 'on' if nav=='drafts' }}">Drafts{% if drafts_count %} <span class="count">{{ drafts_count }}</span>{% endif %}</a>
     <a href="/threads" class="{{ 'on' if nav=='threads' }}">Threads</a>
     <a href="/calendar" class="{{ 'on' if nav=='calendar' }}">Calendar</a>
-    <a href="/activity" class="{{ 'on' if nav=='activity' }}">Activity log</a>
+    <a href="/run" class="{{ 'on' if nav=='run' }}">Run</a>
+    <a href="/activity" class="{{ 'on' if nav=='activity' }}">Activity</a>
   </nav>
-  <span class="meta">Rubric {{ rubric }} · {{ model }} · all email goes to DEMO_EMAIL only{% if not public %} · <a href="/logout">Log out</a>{% endif %}</span>
-</header>
+  <span class="meta">{{ model }} · email to demo inbox only{% if not public %} · <a href="/logout" style="color:var(--n200)">Log out</a>{% endif %}</span>
+</div></header>
 <main>
 {% block content %}{% endblock %}
 </main>
 <script>
-  // Disable submit buttons while a request runs (the reply agent can take ~30s).
   // Deferred so the clicked button's name/value (e.g. action=send) is still included in the submission.
   document.querySelectorAll('form').forEach(f => f.addEventListener('submit', (ev) => {
     const clicked = ev.submitter;

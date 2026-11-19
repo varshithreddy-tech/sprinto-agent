@@ -2,7 +2,8 @@
 {% block title %}Run{% endblock %}
 {% block content %}
 {% if active %}<meta http-equiv="refresh" content="6">{% endif %}
-<h1>Run outbound pipeline</h1>
+<div class="eyebrow">Research worker queue</div>
+<h1>Run the pipeline</h1>
 <div class="banner {{ 'ok' if hb_age is not none and hb_age < 90 else 'warn' }} small">
   Research (scraping company sites with a headless browser, several minutes per domain) runs on the
   <b>research worker</b>: <code>python run.py --worker</code> on your machine. This page queues domains in the shared Neon
@@ -29,9 +30,9 @@
   {% for j in rows %}
   <tr><td>{{ j.id }}</td><td>{% if j.result_status %}<a href="/company/{{ j.domain }}">{{ j.domain }}</a>{% else %}{{ j.domain }}{% endif %}</td>
       <td class="small">{{ 'mock' if j.mock_hunter else 'live' }} Hunter · {{ 'dry run' if j.dry_run else 'real send' }}{{ ' · force' if j.force }}</td>
-      <td><span class="pill {{ 'ok' if j.status=='done' else ('bad' if j.status=='failed' else 'warn') }}">{{ j.status }}</span></td>
+      <td>{{ j.status|status }}</td>
       <td class="small">{{ j.progress or '' }}{% if j.error %}<div class="bad">{{ j.error }}</div>{% endif %}</td>
-      <td>{{ j.result_status or '' }}</td><td class="small muted">{{ j.created_at|ist('%d %b %H:%M') }}</td>
+      <td>{{ j.result_status|status }}</td><td class="small muted">{{ j.created_at|ist('%d %b %H:%M') }}</td>
       <td class="small muted">{{ j.finished_at|ist('%d %b %H:%M') if j.finished_at else '' }}</td></tr>
   {% endfor %}
 </table></div>

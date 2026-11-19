@@ -163,16 +163,151 @@ def ist(iso: str | None, fmt: str = "%a %d %b %Y, %H:%M") -> str:
 
 
 templates.env.filters["ist"] = ist
+
+STATUS = {  # status -> (style, icon, label). solid = done/positive, tint = needs you, outline = in progress, dash = stopped/negative
+    "EMAIL_SENT": ("solid", "✓", "Email sent"), "DRY_RUN_SENT": ("solid", "✓", "Sent (dry run)"),
+    "MEETING_BOOKED": ("solid", "✓", "Meeting booked"), "QUALIFIED": ("solid", "✓", "Qualified"), "done": ("solid", "✓", "Done"),
+    "DRAFT_READY": ("tint", "✎", "Draft to review"), "REPLY_DRAFT_READY": ("tint", "↩", "Reply to review"),
+    "EMAIL_QA_FAILED": ("tint", "✎", "Draft (failed QA)"),
+    "AWAITING_REPLY": ("", "◷", "Awaiting reply"), "TIMES_PROPOSED": ("", "◷", "Times proposed"), "INFO_SENT": ("", "◷", "Info sent"),
+    "CLARIFICATION_REQUESTED": ("", "◷", "Clarifying"), "OUT_OF_OFFICE": ("", "◷", "Out of office"),
+    "queued": ("", "◷", "Queued"), "running": ("", "▸", "Running"),
+    "LOW_PRIORITY": ("", "↓", "Low priority"), "NO_SUITABLE_CONTACT": ("", "∅", "No suitable contact"),
+    "INSUFFICIENT_EVIDENCE": ("", "?", "Insufficient evidence"), "INSUFFICIENT_PAIN_EVIDENCE": ("", "?", "Pain evidence thin"),
+    "DISQUALIFIED": ("dash", "✕", "Disqualified"), "RETRIEVAL_FAILED": ("dash", "✕", "Site unreadable"),
+    "ESCALATED": ("dash", "!", "Handed to human"), "BOOKING_UNCERTAIN": ("dash", "!", "Booking unclear"),
+    "SEND_UNCERTAIN": ("dash", "?", "Send unconfirmed"), "REJECTED": ("dash", "✕", "Not interested"),
+    "OPTED_OUT": ("dash", "✕", "Opted out"), "DRAFT_DISCARDED": ("dash", "✕", "Draft discarded"), "ERROR": ("dash", "!", "Error"),
+    "failed": ("dash", "!", "Failed"),
+}
+
+
+def status_pill(status):
+    from markupsafe import Markup, escape
+    if not status:
+        return ""
+    style, icon, label = STATUS.get(status, ("", "•", str(status).replace("_", " ").capitalize()))
+    return Markup(f'<span class="pill {style}" title="{escape(status)}"><span class="i">{icon}</span>{escape(label)}</span>')
+
+
+EVENT_LABELS = {"QUALIFICATION": "Qualification scored", "DRAFT_CREATED": "Cold email drafted", "DRAFT_EDITED": "Draft edited",
+                "EMAIL_APPROVED_SENT": "Email approved & sent", "EMAIL_SENT": "Email sent", "THREAD_OPENED": "Thread opened",
+                "REPLY_CLASSIFIED": "Prospect reply classified", "REPLY_DRAFTED": "Agent reply drafted",
+                "REPLY_DRAFT_APPROVED": "Agent reply approved", "REPLY_SENT": "Reply sent", "TIMES_PROPOSED": "Times proposed",
+                "MEETING_CONFIRMED": "Meeting booked", "MEETING_RESCHEDULED": "Meeting moved", "ESCALATED": "Handed to a human",
+                "CALENDAR_CHECKED": "Calendar checked", "BOOKING_ATTEMPT": "Booking checked", "INFO_ANSWERED": "Question answered"}
+templates.env.filters["status"] = status_pill
+templates.env.filters["event"] = lambda e: EVENT_LABELS.get(e, (e or "").replace("_", " ").capitalize())
 templates.env.filters["pretty"] = lambda v: redact(json.dumps(v, indent=1, default=str, ensure_ascii=False))
 templates.env.filters["redact"] = redact
 
 
 # ------------------------------------------------------------------------------------------------ pages
 @app.get("/", response_class=HTMLResponse)
+def overview(request: Request):
+    return page(request, "overview.html", nav="overview", o=overview_data())
+
+
+@app.get("/companies", response_class=HTMLResponse)
 def companies(request: Request):
     rows = db.query("SELECT domain, status, total, rounds, pages_fetched, contact_name, contact_title, email_status,"
-                    " top_reason, updated_at FROM companies ORDER BY updated_at DESC")
+                    " top_reason, updated_at FROM companies ORDER BY COALESCE(total, -1) DESC, domain")
     return page(request, "companies.html", rows=rows)
+
+
+def overview_data() -> dict:
+    """Everything the Overview needs, computed from the shared database in one pass."""
+    from agent.graph import get_state
+    comps = db.query("SELECT domain, status, total, contact_name, contact_title, decision_log, updated_at FROM companies")
+    logs = {c["domain"]: jl(c["decision_log"]) for c in comps}
+    researched = len(comps)
+    meetings = db.query("SELECT * FROM calendar_events WHERE kind='meeting' AND status!='cancelled' ORDER BY start_utc")
+    threads = {t["thread_id"] for t in db.query("SELECT thread_id FROM threads")}
+    replied = {r["thread_id"] for r in db.query("SELECT DISTINCT thread_id FROM messages WHERE direction='inbound'")}
+    booked_domains = {m["domain"] for m in meetings}
+
+    # Furthest stage each company reached (so the funnel can never widen, even if a later
+    # re-run overwrote an earlier record — e.g. a mock run that was followed by a live one).
+    def reached(domain: str, l: dict) -> int:
+        stage = 0
+        if (l.get("qualification") or {}).get("status") == "QUALIFIED" or l.get("status") == "QUALIFIED":
+            stage = 1
+        if (l.get("contact") or {}).get("status") == "CONTACT_SELECTED":
+            stage = 2
+        if l.get("draft") or (l.get("email") or {}).get("versions"):
+            stage = 3
+        if domain in threads or l.get("status") in ("EMAIL_SENT", "DRY_RUN_SENT"):
+            stage = 4
+        if domain in replied:
+            stage = 5
+        if domain in booked_domains:
+            stage = 6
+        return stage
+    stage_of = {d: reached(d, l) for d, l in logs.items()}
+    names = ["Qualified", "Contact found", "Email drafted", "Email sent", "Prospect replied", "Meeting booked"]
+    funnel = [("Researched", researched)] + [(n, sum(1 for s in stage_of.values() if s >= i + 1)) for i, n in enumerate(names)]
+    qualified = [d for d, s in stage_of.items() if s >= 1]
+    sent = [d for d, s in stage_of.items() if s >= 4]
+    top = max(researched, 1)
+
+    # scores vs the 65-point bar
+    scores = []
+    for c in comps:
+        l = logs[c["domain"]]
+        total = c["total"] if c["total"] is not None else (l.get("qualification") or {}).get("total")
+        scores.append({"domain": c["domain"], "total": total, "status": c["status"],
+                       "qualified": c["domain"] in qualified})
+    scores.sort(key=lambda r: (-(r["total"] if r["total"] is not None else -1), r["domain"]))
+
+    # what needs a person now
+    attention = []
+    cold = pending_drafts()
+    if cold:
+        attention.append({"icon": "✎", "solid": True, "title": f"{len(cold)} cold email{'s' if len(cold) != 1 else ''} to review",
+                          "detail": ", ".join(d["domain"] for d in cold[:4]), "href": "/drafts"})
+    reply_threads = db.query("SELECT thread_id, company FROM threads WHERE status=?", ("REPLY_DRAFT_READY",))
+    if reply_threads:
+        attention.append({"icon": "↩", "solid": True, "title": f"{len(reply_threads)} agent repl{'ies' if len(reply_threads) != 1 else 'y'} to review",
+                          "detail": ", ".join(t["company"] for t in reply_threads[:4]), "href": "/drafts"})
+    for t in db.query("SELECT thread_id, company FROM threads WHERE status IN ('ESCALATED','BOOKING_UNCERTAIN')"):
+        st_ = get_state(t["thread_id"]) or {}
+        attention.append({"icon": "!", "solid": False, "title": f"{t['company']} handed to a human",
+                          "detail": (st_.get("escalation_reason") or "")[:110], "href": f"/threads/{t['thread_id']}"})
+    unc = db.query("SELECT domain FROM operations WHERE status='SEND_UNCERTAIN'")
+    if unc:
+        attention.append({"icon": "?", "solid": False, "title": f"{len(unc)} send{'s' if len(unc) != 1 else ''} not yet confirmed",
+                          "detail": "Checked against Resend automatically", "href": "/activity"})
+    now = datetime.now(timezone.utc)
+    for t in db.query("SELECT thread_id, company, reply_deadline, status FROM threads WHERE status IN "
+                      "('AWAITING_REPLY','TIMES_PROPOSED','INFO_SENT','CLARIFICATION_REQUESTED')"):
+        if t["reply_deadline"]:
+            left = (datetime.fromisoformat(t["reply_deadline"]) - now).total_seconds() / 3600
+            if 0 < left <= 24:
+                attention.append({"icon": "◷", "solid": False, "title": f"{t['company']}: no reply yet",
+                                  "detail": f"Escalates in {left:.0f} h if the prospect stays quiet", "href": f"/threads/{t['thread_id']}"})
+    queued = db.query_one("SELECT count(*) AS n FROM jobs WHERE status IN ('queued','running')")["n"]
+    hb = db.kv_get("worker_heartbeat")
+    hb_age = int((now - datetime.fromisoformat(hb)).total_seconds()) if hb else None
+    worker_on = hb_age is not None and hb_age < 90
+    if queued and not worker_on:
+        attention.append({"icon": "■", "solid": False, "title": f"{queued} run{'s' if queued != 1 else ''} waiting for the worker",
+                          "detail": "Start python run.py --worker on the laptop", "href": "/run"})
+
+    upcoming = [m for m in meetings if datetime.fromisoformat(m["end_utc"]) > now][:4]
+    for m in upcoming:
+        s = datetime.fromisoformat(m["start_utc"]).astimezone(IST)
+        m["mon"], m["day"], m["when"] = s.strftime("%b").upper(), s.strftime("%d"), s.strftime("%a, %H:%M IST")
+        t = db.query_one("SELECT company, contact_name FROM threads WHERE thread_id=?", (m["domain"],)) or {}
+        m["company"], m["who"] = t.get("company") or m["domain"], t.get("contact_name") or ""
+
+    recent = db.query("SELECT ts, domain, event FROM activity_log ORDER BY id DESC LIMIT 7")
+    last_run = db.query_one("SELECT max(updated_at) AS t FROM companies")["t"]
+    q_rate = round(100 * len(qualified) / researched) if researched else 0
+    return {"tiles": {"researched": researched, "qualified": len(qualified), "q_rate": q_rate, "sent": len(sent),
+                      "meetings": len(booked_domains), "review": len(cold) + len(reply_threads), "replied": sum(1 for s in stage_of.values() if s >= 5)},
+            "funnel": [{"name": n, "value": v, "pct": round(100 * v / top)} for n, v in funnel],
+            "scores": scores, "threshold": S.QUALIFY_MIN_TOTAL, "attention": attention, "upcoming": upcoming,
+            "recent": recent, "worker_on": worker_on, "hb_age": hb_age, "queued": queued, "last_run": last_run}
 
 
 @app.get("/company/{domain}", response_class=HTMLResponse)

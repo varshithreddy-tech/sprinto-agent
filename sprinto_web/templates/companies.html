@@ -1,22 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Companies{% endblock %}
 {% block content %}
+<div class="eyebrow">Research results</div>
 <h1>Companies</h1>
+<p class="lede">Every domain the agent researched, best score first. Open one to see why it qualified, who was chosen and why the email reads the way it does.</p>
 {% if not rows %}
   <div class="card">No companies yet. Queue domains on the <a href="/run">Run</a> page.</div>
 {% else %}
 <div class="scroll"><table>
-  <tr><th>Domain</th><th>Status</th><th>Total</th><th>Rounds</th><th>Pages</th><th>Contact</th><th>Email</th><th>Top reason</th><th>Updated</th></tr>
+  <tr><th>Company</th><th>Score</th><th>Outcome</th><th>Contact</th><th>Research</th><th>Why</th><th>Updated</th></tr>
   {% for r in rows %}
   <tr>
-    <td><a href="/company/{{ r.domain }}">{{ r.domain }}</a></td>
-    <td><span class="pill {{ 'ok' if r.status in ('EMAIL_SENT','DRY_RUN_SENT','QUALIFIED','DRAFT_READY') else ('bad' if r.status in ('DISQUALIFIED','ERROR') else 'warn') }}">{{ r.status }}</span></td>
-    <td>{{ '%g'|format(r.total) if r.total is not none else '' }}</td>
-    <td>{{ r.rounds or 0 }}</td><td>{{ r.pages_fetched or '' }}</td>
+    <td><a href="/company/{{ r.domain }}" style="font-weight:600">{{ r.domain }}</a></td>
+    <td style="white-space:nowrap">{% if r.total is not none %}<span class="dimbar" style="width:70px"><i style="width:{{ r.total }}%;{{ '' if r.total >= 65 else 'background:var(--n300)' }}"></i></span>
+        <b style="margin-left:6px">{{ '%g'|format(r.total) }}</b>{% else %}<span class="faint">–</span>{% endif %}</td>
+    <td>{{ r.status|status }}{% if r.status in ('DRAFT_READY','EMAIL_QA_FAILED') %}<div class="small" style="margin-top:4px"><a href="/company/{{ r.domain }}#draft">Review draft →</a></div>{% endif %}</td>
     <td>{{ r.contact_name or '' }}{% if r.contact_title %}<div class="muted small">{{ r.contact_title }}</div>{% endif %}</td>
-    <td>{% if r.status in ('DRAFT_READY','EMAIL_QA_FAILED') %}<a href="/company/{{ r.domain }}#draft">Review draft →</a>{% else %}{{ r.email_status or '' }}{% endif %}</td>
-    <td class="small">{{ (r.top_reason or '')[:160] }}</td>
-    <td class="small muted">{{ r.updated_at|ist('%d %b %H:%M') }}</td>
+    <td class="small muted" style="white-space:nowrap">{{ r.pages_fetched or 0 }} pages · {{ r.rounds or 0 }} extra round{{ '' if r.rounds == 1 else 's' }}</td>
+    <td class="small" style="max-width:360px">{{ (r.top_reason or '')[:150] }}</td>
+    <td class="small muted" style="white-space:nowrap">{{ r.updated_at|ist('%d %b %H:%M') }}</td>
   </tr>
   {% endfor %}
 </table></div>

@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:18px">
+  <div>
+    <div class="eyebrow">Outbound overview</div>
+    <h1>From domain list to booked meetings</h1>
+    <div class="statusline">
+      <span><span class="dot {{ 'on' if o.worker_on }}"></span>&nbsp; Research worker {{ 'online' if o.worker_on else 'offline' }}</span>
+      <span class="faint">·</span><span>Last research {{ o.last_run|ist('%d %b, %H:%M') if o.last_run else 'never' }}</span>
+      {% if o.queued %}<span class="faint">·</span><span>{{ o.queued }} in queue</span>{% endif %}
+    </div>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:8px">
+    <a class="btn secondary" href="/companies">All companies</a>
+    <a class="btn" href="/run">New run →</a>
+  </div>
+</div>
+
+<section class="tiles" aria-label="Key numbers">
+  <a class="tile" href="/companies"><div class="label">Companies researched</div><div class="value">{{ o.tiles.researched }}</div><div class="sub">from their own websites</div></a>
+  <a class="tile" href="/companies"><div class="label">Qualified for Sprinto</div><div class="value">{{ o.tiles.qualified }}</div><div class="sub">{{ o.tiles.q_rate }}% of researched · bar is {{ o.threshold }}/100</div></a>
+  <a class="tile" href="/threads"><div class="label">Emails sent</div><div class="value">{{ o.tiles.sent }}</div><div class="sub">{{ o.tiles.replied }} with a reply</div></a>
+  <a class="tile" href="/calendar"><div class="label">Meetings booked</div><div class="value">{{ o.tiles.meetings }}</div><div class="sub">on the demo calendar</div></a>
+  <a class="tile cta" href="/drafts"><span class="arrow">→</span><div class="label">Waiting for your review</div><div class="value">{{ o.tiles.review }}</div><div class="sub">{{ 'drafts to approve' if o.tiles.review else 'nothing pending' }}</div></a>
+</section>
+
+<div class="dash-grid">
+  <section class="panel">
+    <h2>Pipeline</h2>
+    <p class="hint">How far each researched company got. Every step after research needs the one before it.</p>
+    <div class="funnel">
+      {% for f in o.funnel %}
+      <div class="frow">
+        <div class="name">{{ f.name }}</div>
+        <div class="bar tip" data-tip="{{ f.name }}: {{ f.value }} of {{ o.tiles.researched }} ({{ f.pct }}%)">
+          <div class="fill" style="width:{{ f.pct }}%;background:var(--n900);opacity:{{ 1 - loop.index0 * 0.09 }}"></div>
+        </div>
+        <div class="num">{{ f.value }} <span>{{ f.pct }}%</span></div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Needs your attention</h2>
+    <p class="hint">Nothing is emailed or booked without a person clicking Send.</p>
+    {% if o.attention %}
+    <ul class="list">
+      {% for a in o.attention %}
+      <li><span class="ico {{ 'solid' if a.solid }}">{{ a.icon }}</span>
+          <div><a href="{{ a.href }}" class="t" style="text-decoration:none;color:var(--ink)">{{ a.title }}</a>{% if a.detail %}<div class="d">{{ a.detail }}</div>{% endif %}</div>
+          <a class="when" href="{{ a.href }}">Open →</a></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="allclear"><span class="ico" style="background:var(--white);border:1px solid var(--n200);width:24px;height:24px;border-radius:7px;display:grid;place-items:center">✓</span>All clear — no drafts, handoffs or stuck sends.</div>
+    {% endif %}
+  </section>
+</div>
+
+<div class="dash-grid">
+  <section class="panel">
+    <h2>Company scores</h2>
+    <p class="hint">Qualification score out of 100. A company qualifies at {{ o.threshold }}+ with strong business fit and some compliance workload.</p>
+    <div class="scores">
+      {% for s in o.scores %}
+      <a class="srow" href="/company/{{ s.domain }}">
+        <span class="dom">{{ s.domain }}</span>
+        <span class="sbar tip" data-tip="{{ s.domain }}: {{ '%g'|format(s.total) if s.total is not none else 'not scored' }} / 100">
+          {% if s.total is not none %}<span class="fill {{ 'q' if s.qualified else 'nq' }}" style="width:{{ s.total }}%"></span>{% endif %}
+          <span class="thr" style="left:{{ o.threshold }}%"></span>
+        </span>
+        <span class="val">{{ '%g'|format(s.total) if s.total is not none else '–' }}</span>
+        <span>{{ s.status|status }}</span>
+      </a>
+      {% else %}
+      <p class="muted small">No companies yet — start a <a href="/run">run</a>.</p>
+      {% endfor %}
+    </div>
+    <div class="legend"><span><i style="background:var(--n900)"></i>Qualified</span><span><i style="background:var(--n300)"></i>Not qualified</span>
+      <span><i style="background:var(--n950);width:2px;height:12px;border-radius:1px"></i>{{ o.threshold }}-point bar</span></div>
+  </section>
+
+  <div style="display:grid;gap:16px;align-content:start">
+    <section class="panel">
+      <h2>Upcoming meetings</h2>
+      {% if o.upcoming %}
+      <ul class="list">
+        {% for m in o.upcoming %}
+        <li><div class="datebox"><b>{{ m.mon }}</b><span>{{ m.day }}</span></div>
+            <div><div class="t">{{ m.company }}</div><div class="d">{{ m.when }} · 30 min{% if m.who %} · {{ m.who }}{% endif %}</div></div>
+            <a class="when" href="/threads/{{ m.domain }}">Thread →</a></li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="muted small" style="margin:0">No meetings yet.</p>{% endif %}
+    </section>
+    <section class="panel">
+      <h2>Latest activity</h2>
+      <ul class="list">
+        {% for r in o.recent %}
+        <li style="padding:7px 0"><div><div class="t" style="font-weight:550;font-size:13px">{{ r.event|event }}</div><div class="d">{{ r.domain }}</div></div>
+            <span class="when">{{ r.ts|ist('%d %b %H:%M') }}</span></li>
+        {% else %}<li class="muted small">No activity yet.</li>{% endfor %}
+      </ul>
+      <p class="small" style="margin:8px 0 0"><a href="/activity">Full activity log →</a></p>
+    </section>
+  </div>
+</div>
+{% endblock %}

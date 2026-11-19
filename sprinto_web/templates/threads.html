@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Threads{% endblock %}
 {% block content %}
+<div class="eyebrow">Conversations</div>
 <h1>Threads</h1>
 <p class="muted small">Every sent email opens a thread. Open one to type a simulated prospect reply and watch the reply agent work.</p>
 {% if not rows %}<div class="card">No sent emails yet.</div>{% else %}
@@ -9,7 +10,7 @@
   {% for t in rows %}
   <tr><td><a href="/threads/{{ t.thread_id }}">{{ t.company }}</a><div class="muted small">{{ t.domain }}</div></td>
       <td>{{ t.contact_name }}<div class="muted small">{{ t.contact_title }}</div></td>
-      <td class="small">{{ t.subject }}</td><td><span class="pill">{{ t.status }}</span></td>
+      <td class="small">{{ t.subject }}</td><td>{{ t.status|status }}</td>
       <td class="small">{{ t.reply_deadline|ist('%a %d %b %H:%M') }}</td><td class="small muted">{{ t.created_at|ist('%d %b %H:%M') }}</td></tr>
   {% endfor %}
 </table></div>

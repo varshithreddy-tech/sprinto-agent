@@ -1,15 +1,31 @@
 {% extends "base.html" %}
 {% block title %}{{ rec.domain }}{% endblock %}
 {% block content %}
-<p class="small"><a href="/">← Companies</a></p>
-<h1>{{ rec.domain }} <span class="pill">{{ log.status }}</span></h1>
-<p class="muted small">Rubric {{ log.rubric_version }} · mode {{ log.mode }} · run {{ log.run_id }}</p>
-{% if log.top_reason %}<div class="card"><b>Top reason:</b> {{ log.top_reason }}</div>{% endif %}
+<p class="small" style="margin:0 0 10px"><a href="/companies">← Companies</a></p>
+{% set total = q.total if q.total is defined and q.total is not none else rec.total %}
+<section class="panel summary">
+  <div class="bigscore" style="background:conic-gradient(var(--n900) {{ (total or 0) * 3.6 }}deg, var(--n100) 0)">
+    <div style="position:absolute;inset:9px;background:var(--white);border-radius:50%;display:grid;place-items:center;align-content:center">
+      <div class="n">{{ '%g'|format(total) if total is not none else '–' }}</div><div class="of">of 100</div></div>
+  </div>
+  <div>
+    <div class="eyebrow">Company</div>
+    <h1 style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">{{ rec.domain }} {{ log.status|status }}</h1>
+    {% if log.top_reason %}<p class="muted" style="margin:2px 0 12px">{{ log.top_reason }}</p>{% endif %}
+    <div class="facts">
+      <div><div class="k">Qualification bar</div>{{ thresholds.min_total }}+ points{% if total is not none %} · {{ 'passed' if total >= thresholds.min_total else 'below' }}{% endif %}</div>
+      <div><div class="k">Contact</div>{{ (log.contact.selected.name ~ ', ' ~ log.contact.selected.title) if log.contact and log.contact.selected else '—' }}</div>
+      <div><div class="k">Email</div>{% if log.draft %}{{ {'pending_review':'Draft waiting for review','sent':'Sent after review','discarded':'Discarded','sent_uncertain':'Send unconfirmed'}.get(log.draft.state, log.draft.state) }}{% elif log.send %}Sent{% else %}—{% endif %}</div>
+      <div><div class="k">Research</div>{{ log.pages_fetched or (log.pages|length if log.pages else 0) }} pages · {{ log.additional_rounds or 0 }} extra rounds</div>
+    </div>
+    <p class="small faint" style="margin:10px 0 0">Rubric {{ log.rubric_version }} · {{ 'mock' if log.mode and log.mode.mock_hunter else 'live' }} Hunter · {{ 'dry run' if log.mode and log.mode.dry_run else 'real send' }} · run {{ log.run_id }}</p>
+  </div>
+</section>
 {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
 {% if err %}<div class="banner bad">{{ err }}</div>{% endif %}
 
 {% if draft %}
-<section id="draft" class="card" style="border:2px solid var(--accent)">
+<section id="draft" class="card feature">
   {% if draft.state == 'pending_review' %}
   <h2 style="margin-top:0">Review draft before sending</h2>
   <p class="small muted">Intended for <b>{{ person.name }}</b>, {{ person.title }}. On Send it goes to the demo inbox only (DEMO_EMAIL), with a one-line DEMO banner on top{% if log.mode and log.mode.dry_run %}; this run is a <b>dry run</b>, so Send records the email without delivering it{% endif %}.
@@ -46,12 +62,15 @@
 {% if log.escalation_reason %}<div class="banner bad">Escalation: {{ log.escalation_reason }}</div>{% endif %}
 
 {% if q.dimensions %}
-<h2>Qualification: {{ '%g'|format(q.total) }} / 100 <span class="muted small">(best case with gaps filled: {{ '%g'|format(q.max_possible) if q.max_possible is not none }})</span></h2>
+<h2>Why it scored {{ '%g'|format(q.total) }} <span class="muted small" style="font-weight:500">· best case with evidence gaps filled: {{ '%g'|format(q.max_possible) if q.max_possible is not none }}</span></h2>
 <p class="muted small">Thresholds: total ≥ {{ thresholds.min_total }}, business fit = 2, compliance workload ≥ 1. Points = weight × level ÷ 2. The LLM proposes a level; code checks evidence and date windows.</p>
 <div class="scroll"><table>
-  <tr><th>Dimension</th><th>Weight</th><th>Level</th><th>LLM level</th><th>Points</th><th>Zero reason</th><th>Evidence</th><th>Reason</th><th>Code adjustments</th></tr>
+  <tr><th>Dimension</th><th>Points</th><th>Level</th><th>AI level</th><th>Zero reason</th><th>Evidence</th><th>Reason</th><th>Code adjustments</th></tr>
   {% for n, d in q.dimensions.items() %}
-  <tr><td>{{ n }}</td><td>{{ d.weight }}</td><td><b>{{ d.level }}</b></td><td>{{ d.llm_level }}</td><td>{{ '%g'|format(d.points) }}</td>
+  <tr><td style="font-weight:550">{{ n.replace('_', ' ')|capitalize }}</td>
+      <td style="white-space:nowrap"><span class="dimbar" style="width:{{ d.weight * 3 }}px"><i style="width:{{ (d.points / d.weight * 100) if d.weight else 0 }}%"></i></span>
+          <b style="margin-left:6px">{{ '%g'|format(d.points) }}</b><span class="faint">/{{ d.weight }}</span></td>
+      <td><b>{{ d.level }}</b></td><td>{{ d.llm_level }}</td>
       <td>{{ d.zero_reason or '' }}</td><td class="small">{{ d.evidence_ids|join(', ') }}</td><td class="small">{{ d.reason }}</td>
       <td class="small">{{ d.adjustments|join('; ') }}</td></tr>
   {% endfor %}

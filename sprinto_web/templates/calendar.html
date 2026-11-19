@@ -1,18 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Calendar{% endblock %}
 {% block content %}
-<h1>Demo calendar <span class="muted small">organizer: Asia/Kolkata</span></h1>
-<p>{% for w in weeks %}<a href="/calendar?week={{ w.isoformat() }}" class="pill" style="{{ 'background:var(--accent);color:#fff' if w == cur }}">Week of {{ w.strftime('%d %b') }}</a> {% endfor %}</p>
+<div class="eyebrow">Demo calendar · organizer in Asia/Kolkata</div>
+<h1>Calendar</h1>
+<p class="lede">Weekdays 09:00–18:00 IST in 30-minute slots. The agent only offers slots that are free here, and books one only when you approve the confirmation.</p>
+<p style="display:flex;gap:6px;flex-wrap:wrap">{% for w in weeks %}<a href="/calendar?week={{ w.isoformat() }}" class="pill {{ 'solid' if w == cur }}" style="text-decoration:none">Week of {{ w.strftime('%d %b') }}</a>{% endfor %}</p>
 <div class="scroll"><table style="table-layout:fixed">
   <tr><th style="width:64px"></th>{% for d in days %}<th>{{ d.strftime('%a %d %b') }}</th>{% endfor %}</tr>
   {% for tm in times %}
   <tr><td class="muted small">{{ tm }}</td>
     {% for d in days %}{% set cell = grid.get((d.isoformat(), tm)) %}
-    <td class="small" style="{{ 'background:var(--meet);color:#fff' if cell and cell.kind=='meeting' else ('background:var(--busy);color:#fff' if cell else '') }}">{{ ('📅 ' if cell.kind=='meeting' else '■ ') ~ cell.title if cell else '' }}</td>
+    <td class="small" style="{{ 'background:var(--n900);color:var(--white);font-weight:600' if cell and cell.kind=='meeting' else ('background:var(--n100);color:var(--n700)' if cell else '') }}">{{ ('● ' if cell.kind=='meeting' else '') ~ cell.title if cell else '' }}</td>
     {% endfor %}</tr>
   {% endfor %}
 </table></div>
-<p class="small muted">■ busy block (seeded) · 📅 booked meeting. Weekdays 09:00–18:00 IST, 30-minute slots, 30-day horizon. The agent never claims access to the prospect's calendar.</p>
+<div class="legend"><span><i style="background:var(--n100);border-radius:3px"></i>Busy (seeded)</span><span><i style="background:var(--n900);border-radius:3px"></i>Booked meeting</span><span>30-day horizon · the agent never claims access to the prospect's calendar</span></div>
 {% if meetings %}
 <h2>Booked meetings</h2>
 <div class="scroll"><table><tr><th>Event</th><th>Title</th><th>Domain</th><th>Start (IST)</th><th>Status</th></tr>

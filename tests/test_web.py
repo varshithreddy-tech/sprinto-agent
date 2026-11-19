@@ -68,3 +68,23 @@ def test_reply_rate_limit(client, monkeypatch):
     monkeypatch.setattr(S, "RATE_LIMIT_REPLIES_PER_HOUR", 0)
     r = client.post("/threads/acme.io/reply", data={"body": "hi"}, follow_redirects=False)
     assert "Rate%20limit" in r.headers["location"] or "Rate limit" in r.headers["location"]
+
+
+def test_overview_dashboard(client, monkeypatch):
+    monkeypatch.setattr(S, "PUBLIC_ACCESS", True)
+    good = {"domain": "acme.io", "status": "EMAIL_SENT", "qualification": {"status": "QUALIFIED", "total": 80},
+            "contact": {"status": "CONTACT_SELECTED"}, "email": {"versions": [{}]}}
+    bad = {"domain": "shop.io", "status": "DISQUALIFIED", "qualification": {"status": "DISQUALIFIED", "total": 0}}
+    db.upsert_company("acme.io", status="EMAIL_SENT", total=80, decision_log=json.dumps(good))
+    db.upsert_company("shop.io", status="DISQUALIFIED", total=0, decision_log=json.dumps(bad))
+    db.execute("INSERT INTO jobs (domain, mock_hunter, dry_run, force, status, progress, created_at) VALUES (?,?,?,?,?,?,?)",
+               ("x.io", 1, 1, 0, "queued", "queued", db.now_iso()))
+    from sprinto_web.app import overview_data
+    o = overview_data()
+    counts = [f["value"] for f in o["funnel"]]
+    assert counts[:5] == [2, 1, 1, 1, 1] and all(a >= b for a, b in zip(counts, counts[1:]))   # never widens
+    assert o["tiles"]["qualified"] == 1 and o["tiles"]["sent"] == 1
+    assert any("waiting for the worker" in a["title"] for a in o["attention"])                    # queued, no worker
+    html = client.get("/").text
+    assert "From domain list to booked meetings" in html and "Company scores" in html and "acme.io" in html
+    assert client.get("/companies").status_code == 200
