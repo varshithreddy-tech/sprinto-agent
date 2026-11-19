@@ -125,8 +125,14 @@ def worker(S) -> int:
                 res = process_domain(job["domain"], mock_hunter=mock, dry_run=dry, force=bool(job["force"]),
                                      integrations=integrations, progress=progress,
                                      run_id=f"worker-{datetime.now(timezone.utc):%Y%m%dT%H%M%S}")
-                jobs.finish(job["id"], res.get("status"))
-                print(f"[job {job['id']}] done: {res.get('status')}", flush=True)
+                if res.get("skipped"):
+                    # Already drafted/sent earlier: report it as skipped, never as a new send.
+                    note = f"skipped: already {str(res.get('existing_status')).replace('_', ' ').lower()} earlier — nothing re-run or sent"
+                    jobs.finish(job["id"], jobs.SKIPPED, note=note)
+                    print(f"[job {job['id']}] {note}", flush=True)
+                else:
+                    jobs.finish(job["id"], res.get("status"))
+                    print(f"[job {job['id']}] done: {res.get('status')}", flush=True)
             except Exception as e:  # one domain's failure never stops the worker
                 jobs.finish(job["id"], "ERROR", f"{type(e).__name__}: {e}")
                 print(f"[job {job['id']}] failed: {type(e).__name__}: {e}", flush=True)

@@ -143,3 +143,19 @@ def test_web_review_flow(monkeypatch):
     assert status == "DRY_RUN_SENT" and log["send"]["provider_id"].startswith("dryrun-")
     assert "acme.io" not in c.get("/drafts").text
     assert "Sent after review" in c.get("/company/acme.io").text
+
+
+def test_rerun_of_sent_company_is_reported_as_skipped(monkeypatch):
+    """A job for a company emailed earlier must not look like a new send."""
+    def no_send(*a, **k):
+        raise AssertionError("must not send")
+    monkeypatch.setattr(send_mod, "get_sender", no_send)
+    db.upsert_company("acme.io", status="EMAIL_SENT", total=80, decision_log="{}")
+    res = pipeline.process_domain("acme.io", mock_hunter=True, dry_run=True)
+    assert res["skipped"] is True and res["existing_status"] == "EMAIL_SENT"
+    from storage import jobs
+    jobs.enqueue(["acme.io"], mock_hunter=True, dry_run=True, force=False)
+    j = jobs.claim_next("test")
+    jobs.finish(j["id"], jobs.SKIPPED, note="skipped: already email sent earlier — nothing re-run or sent")
+    row = db.query_one("SELECT result_status, progress FROM jobs WHERE id=?", (j["id"],))
+    assert row["result_status"] == "SKIPPED" and "nothing re-run or sent" in row["progress"]

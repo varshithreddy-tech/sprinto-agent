@@ -178,7 +178,7 @@ STATUS = {  # status -> (style, icon, label). solid = done/positive, tint = need
     "ESCALATED": ("dash", "!", "Handed to human"), "BOOKING_UNCERTAIN": ("dash", "!", "Booking unclear"),
     "SEND_UNCERTAIN": ("dash", "?", "Send unconfirmed"), "REJECTED": ("dash", "✕", "Not interested"),
     "OPTED_OUT": ("dash", "✕", "Opted out"), "DRAFT_DISCARDED": ("dash", "✕", "Draft discarded"), "ERROR": ("dash", "!", "Error"),
-    "failed": ("dash", "!", "Failed"),
+    "failed": ("dash", "!", "Failed"), "SKIPPED": ("", "↷", "Skipped — already done"),
 }
 
 

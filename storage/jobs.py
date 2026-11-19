@@ -45,9 +45,12 @@ def progress(job_id: int, msg: str) -> None:
     db.execute("UPDATE jobs SET progress=? WHERE id=?", (msg[:300], job_id))
 
 
-def finish(job_id: int, result_status: str | None, error: str | None = None) -> None:
+SKIPPED = "SKIPPED"  # result when the company was already drafted/sent: nothing was re-run or sent
+
+
+def finish(job_id: int, result_status: str | None, error: str | None = None, note: str | None = None) -> None:
     db.execute("UPDATE jobs SET status=?, result_status=?, error=?, finished_at=?, progress=? WHERE id=?",
-               (FAILED if error else DONE, result_status, error, db.now_iso(), "done" if not error else "failed", job_id))
+               (FAILED if error else DONE, result_status, error, db.now_iso(), note or ("done" if not error else "failed"), job_id))
 
 
 def recent(limit: int = 50) -> list[dict]:

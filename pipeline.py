@@ -68,8 +68,9 @@ def process_domain(domain: str, *, mock_hunter: bool = False, dry_run: bool = Fa
     existing = db.query_one("SELECT status FROM companies WHERE domain=?", (domain,))
     # Resume: skip domains already drafted or sent (re-running would spend credits and replace the draft).
     if existing and existing["status"] in DONE_STATUSES and not force:
-        progress(domain, f"already {existing['status']} — skipped (resume)")
-        return db.query_one("SELECT * FROM companies WHERE domain=?", (domain,))
+        progress(domain, f"already {existing['status']} — skipped, nothing re-run or sent")
+        row = db.query_one("SELECT * FROM companies WHERE domain=?", (domain,))
+        return {**row, "skipped": True, "existing_status": existing["status"]}
     p = lambda m: progress(domain, m)
     log = research_company(domain, progress=p)
     log["run_id"] = run_id
