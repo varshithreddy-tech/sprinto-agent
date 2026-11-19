@@ -16,11 +16,11 @@
   <label for="domains"><b>Domains</b> <span class="muted small">one per line, # comments allowed</span></label>
   <textarea id="domains" name="domains" rows="10">{{ default }}</textarea>
   <p>
-    <label><input type="checkbox" name="mock_hunter" checked> Mock Hunter (fixtures)</label> &nbsp;
-    <label><input type="checkbox" name="dry_run" checked> Dry run (approved drafts are recorded, not delivered)</label> &nbsp;
+    <label><input type="checkbox" name="mock_hunter"> Use mock Hunter data (fictional test contacts)</label> &nbsp;
+    <label><input type="checkbox" name="dry_run"> Practice mode (approved emails are recorded, not delivered)</label> &nbsp;
     <label><input type="checkbox" name="force"> Re-process already-sent domains</label>
   </p>
-  <p class="small muted">Nothing is emailed automatically: each qualified company ends with a <b>draft</b> on the <a href="/drafts">Drafts</a> page for a person to review, edit and send. Unticking Mock Hunter uses real Hunter credits; unticking Dry run makes the Send button deliver real emails to DEMO_EMAIL.</p>
+  <p class="small muted"><b>Everything is automated except sending.</b> The agent researches, qualifies, finds the contact (live Hunter: about 1 credit per qualified company), writes and QA-checks the email, then stops. Each email waits on the <a href="/drafts">Drafts</a> page until you review it and click Send; only then is it delivered (to the demo inbox only).</p>
   <button type="submit" data-label="Queuing…">Queue run</button>
 </form>
 <h2>Jobs</h2>
